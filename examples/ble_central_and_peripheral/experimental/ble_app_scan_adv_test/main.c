@@ -110,7 +110,7 @@
 #define CENTRAL_SCANNING_LED            BSP_BOARD_LED_0
 #define CENTRAL_CONNECTED_LED           BSP_BOARD_LED_1
 
-#define DEVICE_NAME                     "nRF Relay"                                 /**< Name of device used for advertising. */
+#define DEVICE_NAME                     "scan_adv"                                 /**< Name of device used for advertising. */
 #define MANUFACTURER_NAME               "NordicSemiconductor"                       /**< Manufacturer. Passed to Device Information Service. */
 #define APP_ADV_INTERVAL                300                                         /**< The advertising interval (in units of 0.625 ms). This value corresponds to 187.5 ms. */
 
@@ -1112,20 +1112,27 @@ static void advertising_init(void)
 {
     ret_code_t             err_code;
     ble_advertising_init_t init;
+    ble_advdata_manuf_data_t                  adv_manuf_data;
+    uint8_t                                   adv_manuf_data_data[] = "12345678";
 
     memset(&init, 0, sizeof(init));
 
     init.advdata.name_type               = BLE_ADVDATA_FULL_NAME;
     init.advdata.include_appearance      = true;
     init.advdata.flags                   = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-    init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
-    init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
+    //init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
+    //init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
 
     init.config.ble_adv_fast_enabled  = true;
     init.config.ble_adv_fast_interval = APP_ADV_INTERVAL;
     init.config.ble_adv_fast_timeout  = APP_ADV_DURATION;
 
     init.evt_handler = on_adv_evt;
+    
+    adv_manuf_data.data.p_data        = adv_manuf_data_data;
+    adv_manuf_data.data.size          = strlen(adv_manuf_data_data);
+    adv_manuf_data.company_identifier = 0x0059; //Nordic's company ID
+    init.advdata.p_manuf_specific_data = &adv_manuf_data; 
 
     err_code = ble_advertising_init(&m_advertising, &init);
     APP_ERROR_CHECK(err_code);
