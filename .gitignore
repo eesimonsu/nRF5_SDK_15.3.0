@@ -1,0 +1,9 @@
+*.o
+*.d
+*.jlink
+*.ld
+*.elf
+*.hex
+*.map
+*.ind
+*.emSession
