@@ -247,23 +247,23 @@ static void scan_init(void)
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
     APP_ERROR_CHECK(err_code);
 
-    if (strlen(m_target_periph_name) != 0)
-    {
-        err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                           SCAN_NAME_FILTER, 
-                                           m_target_periph_name);
-        APP_ERROR_CHECK(err_code);
-    }
-
-    err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                       SCAN_UUID_FILTER, 
-                                       &m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
-    APP_ERROR_CHECK(err_code);
-
-    err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                       SCAN_UUID_FILTER, 
-                                       &m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
-    APP_ERROR_CHECK(err_code);
+//    if (strlen(m_target_periph_name) != 0)
+//    {
+//        err_code = nrf_ble_scan_filter_set(&m_scan, 
+//                                           SCAN_NAME_FILTER, 
+//                                           m_target_periph_name);
+//        APP_ERROR_CHECK(err_code);
+//    }
+//
+//    err_code = nrf_ble_scan_filter_set(&m_scan, 
+//                                       SCAN_UUID_FILTER, 
+//                                       &m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
+//    APP_ERROR_CHECK(err_code);
+//
+//    err_code = nrf_ble_scan_filter_set(&m_scan, 
+//                                       SCAN_UUID_FILTER, 
+//                                       &m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
+//    APP_ERROR_CHECK(err_code);
 
     err_code = nrf_ble_scan_filters_enable(&m_scan, 
                                            NRF_BLE_SCAN_ALL_FILTER, 
@@ -786,6 +786,45 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     }
     else if ((role == BLE_GAP_ROLE_CENTRAL) || (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_REPORT))
     {
+        const ble_gap_evt_adv_report_t *p_adv_report = &p_ble_evt->evt.gap_evt.params.adv_report;
+        const ble_data_t *data = &p_adv_report->data;
+        uint16_t parsed_name_len;
+        uint16_t offset = 0;
+        uint8_t *name_data;
+        uint8_t *manufacture_data;
+        
+//        NRF_LOG_DEBUG("AD->");
+//        NRF_LOG_HEXDUMP_DEBUG(data->p_data, data->len);
+//        NRF_LOG_DEBUG("<-AD");
+
+        // *mfd_data is a pointer to BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA data
+        name_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
+        parsed_name_len = ble_advdata_search(data->p_data,
+                                         data->len,
+                                         &offset,
+                                         BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
+        
+        if(name_data != NULL)
+        {
+            NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME");
+            NRF_LOG_HEXDUMP_DEBUG(name_data, parsed_name_len);
+        
+
+            data = &p_adv_report->data;
+            offset = 0;
+            manufacture_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+            parsed_name_len = ble_advdata_search(data->p_data,
+                                            data->len,
+                                            &offset,
+                                            BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+
+            if(manufacture_data != NULL)
+            {
+                NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
+                NRF_LOG_HEXDUMP_DEBUG(manufacture_data, parsed_name_len);
+                offset = 0;
+            }
+        }
         ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
         ble_rscs_c_on_ble_evt(p_ble_evt, &m_rscs_c);
         on_ble_central_evt(p_ble_evt);
