@@ -139,7 +139,7 @@
  */
 #define APP_BLE_OBSERVER_PRIO           3
 
-char   BLE_Rx_Buffer[4]
+char   BLE_Rx_Buffer[4];
 
 
 static ble_hrs_t m_hrs;                                             /**< Heart Rate Service instance. */
