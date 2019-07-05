@@ -139,7 +139,23 @@
  */
 #define APP_BLE_OBSERVER_PRIO           3
 
+/*----------------------------------------------------------
+   | premble | Dest Addr | Src Addr | Seq Num  | Hop Count |
+  ----------------------------------------------------------
+   |   8     |     8     |    8     |     8    |    4    |
+  ----------------------------------------------------------
+*/
 char   BLE_Rx_Buffer[4];
+int n;
+typedef  struct{
+                unsigned preamble:8;
+                unsigned dst_addr:8;
+                unsigned source_addr:8;                
+                unsigned seq_num:8;
+                unsigned hopcount:4;
+               } BLE_Rx_Buffer_t;
+
+
 
 
 static ble_hrs_t m_hrs;                                             /**< Heart Rate Service instance. */
@@ -1207,8 +1223,19 @@ int main(void)
     rscs_c_init();
     services_init();
     advertising_init();
+    
+    BLE_Rx_Buffer_t test1;
+   
 
-    // Start execution.
+   memset(&test1,0,sizeof(test1));
+    test1.preamble=0x00;
+    test1.dst_addr=0x68; 
+    test1.source_addr=0x45;
+    test1.seq_num=0x04;
+    test1.hopcount=0x02; 
+    
+    
+     // Start execution.
     NRF_LOG_INFO("Relay example started.");
 
     if (erase_bonds == true)
