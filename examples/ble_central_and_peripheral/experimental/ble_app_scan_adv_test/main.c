@@ -140,9 +140,9 @@
 #define APP_BLE_OBSERVER_PRIO           3
 
 /*----------------------------------------------------------
-   | premble | Dest Addr | Src Addr | Seq Num  | Hop Count |
+   | Preamble | Dest Addr | Src Addr | Seq Num  | Hop Count |
   ----------------------------------------------------------
-   |   8     |     8     |    8     |     8    |    4    |
+   |    8     |     8     |    8     |     8    |     8     |
   ----------------------------------------------------------
 */
 char   BLE_Rx_Buffer[4];
@@ -152,8 +152,10 @@ typedef  struct{
                 unsigned dst_addr:8;
                 unsigned source_addr:8;                
                 unsigned seq_num:8;
-                unsigned hopcount:4;
-               } BLE_Rx_Buffer_t;
+                unsigned hopcount:8;
+               } BLE_Rx_Tx_Buffer_t;
+
+int8_t dst_value=0;//recent destination
 
 
 
@@ -264,6 +266,8 @@ static void scan_init(void)
 
     err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
     APP_ERROR_CHECK(err_code);
+
+    
 
 //    if (strlen(m_target_periph_name) != 0)
 //    {
@@ -806,41 +810,103 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     {
         const ble_gap_evt_adv_report_t *p_adv_report = &p_ble_evt->evt.gap_evt.params.adv_report;
         const ble_data_t *data = &p_adv_report->data;
+
+        int8_t *rssi_data = p_ble_evt->evt.gap_evt.params.adv_report.rssi;//get rssi value
+
         uint16_t parsed_name_len;
         uint16_t offset = 0;
         uint8_t *name_data;
-        uint8_t *manufacture_data;
-        
+        uint8_t *p_manufacture_data;
+        BLE_Rx_Tx_Buffer_t *p_tmp_Rxbuf;
+        uint8_t pre_seq_num[4]={'\0'};
+        uint8_t recent_dst=0x01;//recent destination
+        uint8_t assign_seq=0;//decide which source
+
 //        NRF_LOG_DEBUG("AD->");
 //        NRF_LOG_HEXDUMP_DEBUG(data->p_data, data->len);
 //        NRF_LOG_DEBUG("<-AD");
 
         // *mfd_data is a pointer to BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA data
+         
         name_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
         parsed_name_len = ble_advdata_search(data->p_data,
                                          data->len,
                                          &offset,
                                          BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
         
+       
         if(name_data != NULL)
-        {
+        {   
+
+            NRF_LOG_DEBUG("RSSI VALUE");
+            NRF_LOG_INFO("rssi =%d dBm",rssi_data);//print RSSI value
+
             NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME");
             NRF_LOG_HEXDUMP_DEBUG(name_data, parsed_name_len);
         
 
             data = &p_adv_report->data;
             offset = 0;
-            manufacture_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
-            parsed_name_len = ble_advdata_search(data->p_data,
-                                            data->len,
-                                            &offset,
-                                            BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+            p_manufacture_data =ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);//receive manufacture data
+            
+            p_tmp_Rxbuf =(BLE_Rx_Tx_Buffer_t *) p_manufacture_data;
+            
 
-            if(manufacture_data != NULL)
+            if (p_tmp_Rxbuf->preamble != 0x56)//if not 0x56,turn back
+              return;
+            
+            else if(p_tmp_Rxbuf -> hopcount == 1)//if hopcount=1,turn back
+              return;
+            
+            else if(p_tmp_Rxbuf -> dst_addr != recent_dst)//if destination different from recent_dst,turn back
+              return;
+
+          
+
+
+            parsed_name_len = ble_advdata_search(data->p_data,
+                                                data->len,
+                                                &offset,
+                                                BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+
+            if(p_manufacture_data != NULL)
             {
+              
+              switch(p_tmp_Rxbuf -> source_addr)
+                { 
+                  case 0x01:
+                          assign_seq=0;
+                          break;
+                  case 0x02:
+                          assign_seq=1;
+                          break;
+                  case 0x03:
+                          assign_seq=2;
+                          break;
+                  case 0x04:
+                          assign_seq=3;
+                          break;
+
+                  default:
+                          break;
+                }
+
+             
+                if(p_tmp_Rxbuf -> seq_num > pre_seq_num [assign_seq] || p_tmp_Rxbuf -> seq_num == 0  )//seq_num 0~255 in function
+                {
+
                 NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
-                NRF_LOG_HEXDUMP_DEBUG(manufacture_data, parsed_name_len);
+                NRF_LOG_HEXDUMP_DEBUG(p_manufacture_data, parsed_name_len);//print specific data value
                 offset = 0;
+
+                pre_seq_num[assign_seq] = p_tmp_Rxbuf -> seq_num;//update new seq_num
+
+                p_tmp_Rxbuf -> hopcount--; //hopcount -1
+
+                }
+
+                else 
+                    return;
             }
         }
         ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
@@ -1131,7 +1197,7 @@ static void advertising_init(void)
     ret_code_t             err_code;
     ble_advertising_init_t init;
     ble_advdata_manuf_data_t                  adv_manuf_data;
-    uint8_t                                   adv_manuf_data_data[] = "12345678";
+    uint8_t                                   adv_manuf_data_data[] =   {4,4,4,4,4,4,4};
 
     memset(&init, 0, sizeof(init));
 
@@ -1224,10 +1290,11 @@ int main(void)
     services_init();
     advertising_init();
     
-    BLE_Rx_Buffer_t test1;
+    BLE_Rx_Tx_Buffer_t test1;
    
 
-   memset(&test1,0,sizeof(test1));
+    memset(&test1,0,sizeof(test1));
+    
     test1.preamble=0x00;
     test1.dst_addr=0x68; 
     test1.source_addr=0x45;
