@@ -104,13 +104,13 @@
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 
-
+#define MESH_HEADER_LEN                 5
 #define PERIPHERAL_ADVERTISING_LED      BSP_BOARD_LED_2
 #define PERIPHERAL_CONNECTED_LED        BSP_BOARD_LED_3
 #define CENTRAL_SCANNING_LED            BSP_BOARD_LED_0
 #define CENTRAL_CONNECTED_LED           BSP_BOARD_LED_1
 
-#define DEVICE_NAME                     "scan_adv"                                 /**< Name of device used for advertising. */
+#define DEVICE_NAME                     "scan_adv1"                                 /**< Name of device used for advertising. */
 #define MANUFACTURER_NAME               "NordicSemiconductor"                       /**< Manufacturer. Passed to Device Information Service. */
 #define APP_ADV_INTERVAL                300                                         /**< The advertising interval (in units of 0.625 ms). This value corresponds to 187.5 ms. */
 
@@ -145,19 +145,16 @@
    |   8     |     8     |    8     |     8    |    4    |
   ----------------------------------------------------------
 */
-char   BLE_Rx_Buffer[4];
+char   BLE_Rx_TX_Buffer[5];
 int n;
 typedef  struct{
                 unsigned preamble:8;
                 unsigned dst_addr:8;
                 unsigned source_addr:8;                
                 unsigned seq_num:8;
-                unsigned hopcount:4;
-               } BLE_Rx_Buffer_t;
-
-
-
-
+                unsigned hopcount:8;
+               } BLE_Rx_Tx_Buffer_t;
+int count=0;
 static ble_hrs_t m_hrs;                                             /**< Heart Rate Service instance. */
 static ble_rscs_t m_rscs;                                           /**< Running Speed and Cadence Service instance. */
 static ble_hrs_c_t m_hrs_c;                                         /**< Heart Rate Service client instance. */
@@ -791,7 +788,13 @@ static bool ble_evt_is_advertising_timeout(ble_evt_t const * p_ble_evt)
  * @param[in]   p_context   Unused.
  */
 static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
-{
+{  
+    int i=0;
+   (m_advertising.p_adv_data->adv_data.p_data[14]<=255)? (m_advertising.p_adv_data->adv_data.p_data[14]++):( m_advertising.p_adv_data->adv_data.p_data[14]=0);
+
+
+    
+    printf("%x  %x  %x  %x  %x  %x  %x\n", m_advertising.p_adv_data->adv_data.p_data[9],m_advertising.p_adv_data->adv_data.p_data[10],m_advertising.p_adv_data->adv_data.p_data[11],m_advertising.p_adv_data->adv_data.p_data[12],m_advertising.p_adv_data->adv_data.p_data[13],m_advertising.p_adv_data->adv_data.p_data[14],m_advertising.p_adv_data->adv_data.p_data[15]);
     uint16_t conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
     uint16_t role        = ble_conn_state_role(conn_handle);
 
@@ -1127,12 +1130,19 @@ static void services_init(void)
 /**@brief Function for initializing the advertising functionality.
  */
 static void advertising_init(void)
-{
+{   
+    BLE_Rx_Tx_Buffer_t test1;
+    memset(&test1,0,sizeof(test1));
+    test1.preamble=0x56;
+    test1.dst_addr=0x02;
+    test1.source_addr=0x02;
+    test1.seq_num=0x03;
+    test1.hopcount=0x03;
     ret_code_t             err_code;
     ble_advertising_init_t init;
     ble_advdata_manuf_data_t                  adv_manuf_data;
-    uint8_t                                   adv_manuf_data_data[] = "12345678";
-
+    uint8_t                                   adv_manuf_data_data[] = {test1.preamble,test1.dst_addr,test1.source_addr,test1.seq_num,test1.hopcount};
+   
     memset(&init, 0, sizeof(init));
 
     init.advdata.name_type               = BLE_ADVDATA_FULL_NAME;
@@ -1148,7 +1158,7 @@ static void advertising_init(void)
     init.evt_handler = on_adv_evt;
     
     adv_manuf_data.data.p_data        = adv_manuf_data_data;
-    adv_manuf_data.data.size          = strlen(adv_manuf_data_data);
+    adv_manuf_data.data.size          = MESH_HEADER_LEN;
     adv_manuf_data.company_identifier = 0x0059; //Nordic's company ID
     init.advdata.p_manuf_specific_data = &adv_manuf_data; 
 
@@ -1203,6 +1213,7 @@ static void timer_init(void)
 
 /**@brief Function for initializing the application main entry.
  */
+ 
 int main(void)
 {
     bool erase_bonds;
@@ -1223,18 +1234,7 @@ int main(void)
     rscs_c_init();
     services_init();
     advertising_init();
-    
-    BLE_Rx_Buffer_t test1;
-   
 
-   memset(&test1,0,sizeof(test1));
-    test1.preamble=0x00;
-    test1.dst_addr=0x68; 
-    test1.source_addr=0x45;
-    test1.seq_num=0x04;
-    test1.hopcount=0x02; 
-    
-    
      // Start execution.
     NRF_LOG_INFO("Relay example started.");
 
