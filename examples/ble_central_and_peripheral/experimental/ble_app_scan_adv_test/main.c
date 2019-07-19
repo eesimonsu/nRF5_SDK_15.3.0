@@ -145,16 +145,26 @@
    |   8     |     8     |    8     |     8    |    4    |
   ----------------------------------------------------------
 */
-char   BLE_Rx_TX_Buffer[5];
+char   BLE_Rx_Tx_Buffer[5];
 int n;
-typedef  struct{
-                unsigned preamble:8;
-                unsigned dst_addr:8;
-                unsigned source_addr:8;                
-                unsigned seq_num:8;
-                unsigned hopcount:8;
-               } BLE_Rx_Tx_Buffer_t;
-int count=0;
+typedef  struct 
+               {
+                  uint16_t nordic_num;//0x56,0x00
+                  uint8_t preamble;
+                  uint8_t dst_addr;
+                  uint8_t source_addr;                
+                  uint8_t seq_num;
+                  uint8_t hopcount;
+               }BLE_Rx_Tx_Buffer_t;
+
+uint8_t pre_seq_num[4]={'\0'};
+uint8_t recent_dst=0x02;//recent destination
+uint8_t recent_rssi=-100;
+int8_t dst_value=0;//recent destination
+
+
+
+
 static ble_hrs_t m_hrs;                                             /**< Heart Rate Service instance. */
 static ble_rscs_t m_rscs;                                           /**< Running Speed and Cadence Service instance. */
 static ble_hrs_c_t m_hrs_c;                                         /**< Heart Rate Service client instance. */
@@ -796,63 +806,199 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     
     printf("%x  %x  %x  %x  %x  %x  %x\n", m_advertising.p_adv_data->adv_data.p_data[9],m_advertising.p_adv_data->adv_data.p_data[10],m_advertising.p_adv_data->adv_data.p_data[11],m_advertising.p_adv_data->adv_data.p_data[12],m_advertising.p_adv_data->adv_data.p_data[13],m_advertising.p_adv_data->adv_data.p_data[14],m_advertising.p_adv_data->adv_data.p_data[15]);
     uint16_t conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-    uint16_t role        = ble_conn_state_role(conn_handle);
+    uint16_t role = ble_conn_state_role(conn_handle);
 
     // Based on the role this device plays in the connection, dispatch to the right handler.
     if (role == BLE_GAP_ROLE_PERIPH || ble_evt_is_advertising_timeout(p_ble_evt))
-    {
+      {
         ble_hrs_on_ble_evt(p_ble_evt, &m_hrs);
         ble_rscs_on_ble_evt(p_ble_evt, &m_rscs);
         on_ble_peripheral_evt(p_ble_evt);
-    }
+       }
     else if ((role == BLE_GAP_ROLE_CENTRAL) || (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_REPORT))
     {
-        const ble_gap_evt_adv_report_t *p_adv_report = &p_ble_evt->evt.gap_evt.params.adv_report;
-        const ble_data_t *data = &p_adv_report->data;
-        uint16_t parsed_name_len;
-        uint16_t offset = 0;
-        uint8_t *name_data;
-        uint8_t *manufacture_data;
-        
-//        NRF_LOG_DEBUG("AD->");
-//        NRF_LOG_HEXDUMP_DEBUG(data->p_data, data->len);
-//        NRF_LOG_DEBUG("<-AD");
+      const ble_gap_evt_adv_report_t *p_adv_report = &p_ble_evt->evt.gap_evt.params.adv_report;
+      const ble_data_t *data = &p_adv_report->data;
 
-        // *mfd_data is a pointer to BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA data
-        name_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
-        parsed_name_len = ble_advdata_search(data->p_data,
-                                         data->len,
-                                         &offset,
-                                         BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
-        
-        if(name_data != NULL)
-        {
-            NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME");
-            NRF_LOG_HEXDUMP_DEBUG(name_data, parsed_name_len);
-        
+      int8_t *rssi_data = p_ble_evt->evt.gap_evt.params.adv_report.rssi;//get rssi value
 
+      uint16_t parsed_name_len;
+      uint16_t offset = 0;
+      uint8_t *name_data;
+      uint8_t *p_manufacture_data;
+      BLE_Rx_Tx_Buffer_t tempbuffer;
+      BLE_Rx_Tx_Buffer_t *p_tmp_Rxbuf = &tempbuffer;
+      //uint8_t pre_seq_num[4]={'\0'};
+      //uint8_t recent_dst = 0x02;//recent destination
+      uint8_t assign_seq = 0;//decide which source
+
+      //        NRF_LOG_DEBUG("AD->");
+      //        NRF_LOG_HEXDUMP_DEBUG(data->p_data, data->len);
+      //        NRF_LOG_DEBUG("<-AD");
+
+      // *mfd_data is a pointer to BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA data
+
+      name_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
+      parsed_name_len = ble_advdata_search(data->p_data,
+       data->len,
+       &offset,
+       BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
+
+
+<<<<<<< .mine
             data = &p_adv_report->data;
             offset = 0;
             manufacture_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+
+
+
+
+
+=======
+      if (name_data != NULL)
+      {
+
+      //NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME");
+      //NRF_LOG_HEXDUMP_DEBUG(name_data, parsed_name_len);
+
+
+
+>>>>>>> .theirs
+<<<<<<< .mine
             parsed_name_len = ble_advdata_search(data->p_data,
                                             data->len,
                                             &offset,
                                             BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+=======
+      data = &p_adv_report->data;
+      offset = 0;
+      p_manufacture_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);//receive manufacture data
 
+>>>>>>> .theirs
+
+<<<<<<< .mine
             if(manufacture_data != NULL)
             {
+
+
+
+
+
+
+
+
+
+
+
+=======
+      p_tmp_Rxbuf = (BLE_Rx_Tx_Buffer_t *)p_manufacture_data;
+
+       /*
+       NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
+          NRF_LOG_HEXDUMP_DEBUG(p_manufacture_data, parsed_name_len);//print specific data value
+          offset = 0;
+
+         // p_tmp_Rxbuf -> preamble = 0x56;
+       uint8_t *p_tmp_preamble = &p_tmp_Rxbuf->preamble;
+       NRF_LOG_DEBUG("BLE_GAP_AD_TYP");
+          NRF_LOG_HEXDUMP_DEBUG(&p_tmp_Rxbuf->preamble,1);//print specific data value
+          offset = 0;*/
+
+>>>>>>> .theirs
+<<<<<<< .mine
                 NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
                 NRF_LOG_HEXDUMP_DEBUG(manufacture_data, parsed_name_len);
                 offset = 0;
-            }
-        }
-        ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
-        ble_rscs_c_on_ble_evt(p_ble_evt, &m_rscs_c);
-        on_ble_central_evt(p_ble_evt);
+=======
+      if (p_tmp_Rxbuf->preamble == 0x56)//if not 0x56,turn back
+      {
+
+>>>>>>> .theirs
+
+         if (p_tmp_Rxbuf->hopcount == 1)//if hopcount=1,turn back
+          return;
+
+         else if (p_tmp_Rxbuf->dst_addr != recent_dst)//if destination different from recent_dst,turn back
+          return;
+
+
+
+
+          parsed_name_len = ble_advdata_search(data->p_data,
+           data->len,
+           &offset,
+           BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+
+        if (p_manufacture_data != NULL)
+         {
+
+           switch (p_tmp_Rxbuf->source_addr)
+           {
+           case 0x01:
+            assign_seq = 0;
+            break;
+           case 0x02:
+            assign_seq = 1;
+            break;
+           case 0x03:
+            assign_seq = 2;
+            break;
+           case 0x04:
+            assign_seq = 3;
+            break;
+
+           default:
+            break;
+           }
+
+
+          if (p_tmp_Rxbuf->seq_num > pre_seq_num[assign_seq] || p_tmp_Rxbuf->seq_num == 0x00)//seq_num 0~255 in function
+          {
+
+              NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
+              NRF_LOG_HEXDUMP_DEBUG(p_manufacture_data, parsed_name_len);//print specific data value
+              offset = 0;
+
+              pre_seq_num[assign_seq] = p_tmp_Rxbuf->seq_num;//update new seq_num
+              NRF_LOG_DEBUG("SEQ");
+              NRF_LOG_HEXDUMP_DEBUG(&pre_seq_num[assign_seq], 1);//print specific data value
+
+              p_tmp_Rxbuf->hopcount--; //hopcount -1
+
+          }
+
+          else
+              return;
     }
+   }
+              else if (p_tmp_Rxbuf-> preamble == 0x66)
+                  {
+                             if(recent_dst == p_tmp_Rxbuf -> source_addr)
+                              {
+                                  recent_rssi = rssi_data;
+                                  NRF_LOG_DEBUG("RSSI VALUE");
+                                  NRF_LOG_INFO("rssi =%d dBm", rssi_data);//print RSSI value
+                                  NRF_LOG_DEBUG("ADDRESS");
+                                  NRF_LOG_INFO("addr =%x ",recent_dst );//print RSSI value 
+                              }
+                             else
+                             {  
+                                  if(rssi_data > recent_rssi)
+                                       recent_dst = p_tmp_Rxbuf -> source_addr;
+                                       NRF_LOG_DEBUG("ADDRESS");
+                                       NRF_LOG_INFO("addr =%x ",recent_dst );//print RSSI value 
+                                 
+                             }
+                              
+                  }
+      else
+          return;
+  }
+  ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
+  ble_rscs_c_on_ble_evt(p_ble_evt, &m_rscs_c);
+  on_ble_central_evt(p_ble_evt);
+ }
 }
-
-
 /**@brief Heart Rate Collector initialization.
  */
 static void hrs_c_init(void)
