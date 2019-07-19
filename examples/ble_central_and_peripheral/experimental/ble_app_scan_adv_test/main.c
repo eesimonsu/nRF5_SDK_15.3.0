@@ -37,40 +37,40 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-/**
- * @brief BLE Heart Rate and Running Speed relay application main file.
- *
- * @detail This application demonstrates a simple relay, which passes on the values it receives.
- * By combining a collector part on one end and a sensor part on the other,
- * the s130 can function simultaneously as a central and a peripheral device.
- * 
- * The following figure shows how the sensor ble_app_hrs connects and interacts with the relay
- * in the same manner it would connect to a Heart Rate Collector. In this case, the relay
- * application acts as a central.
- *
- * On the other side, a collector (such as Master Control Panel or ble_app_hrs_c) connects
- * and interacts with the relay in the same manner it would connect to a heart rate sensor peripheral.
- *
- * LED layout:
- * LED 1: Central side is scanning.       LED 2: Central side is connected to a peripheral.
- * LED 3: Peripheral side is advertising. LED 4: Peripheral side is connected to a central.
- *
- * @note While testing, make sure that the Sensor and Collector are actually connecting to the relay,
- *       and not directly to each other!
- *
- *    Peripheral                  Relay                    Central
- *    +--------+        +-----------|----------+        +-----------+
- *    | Heart  |        | Heart     |   Heart  |        |           |
- *    | Rate   | -----> | Rate     -|-> Rate   | -----> | Collector |
- *    | Sensor |        | Collector |   Sensor |        |           |
- *    +--------+        +-----------|   and    |        +-----------+
- *                      | Running   |   Running|
- *    +--------+        | Speed    -|-> Speed  |
- *    | Running|------> | Collector |   Sensor |
- *    | Speed  |        +-----------|----------+
- *    | Sensor |
- *    +--------+
- */
+ /**
+  * @brief BLE Heart Rate and Running Speed relay application main file.
+  *
+  * @detail This application demonstrates a simple relay, which passes on the values it receives.
+  * By combining a collector part on one end and a sensor part on the other,
+  * the s130 can function simultaneously as a central and a peripheral device.
+  *
+  * The following figure shows how the sensor ble_app_hrs connects and interacts with the relay
+  * in the same manner it would connect to a Heart Rate Collector. In this case, the relay
+  * application acts as a central.
+  *
+  * On the other side, a collector (such as Master Control Panel or ble_app_hrs_c) connects
+  * and interacts with the relay in the same manner it would connect to a heart rate sensor peripheral.
+  *
+  * LED layout:
+  * LED 1: Central side is scanning.       LED 2: Central side is connected to a peripheral.
+  * LED 3: Peripheral side is advertising. LED 4: Peripheral side is connected to a central.
+  *
+  * @note While testing, make sure that the Sensor and Collector are actually connecting to the relay,
+  *       and not directly to each other!
+  *
+  *    Peripheral                  Relay                    Central
+  *    +--------+        +-----------|----------+        +-----------+
+  *    | Heart  |        | Heart     |   Heart  |        |           |
+  *    | Rate   | -----> | Rate     -|-> Rate   | -----> | Collector |
+  *    | Sensor |        | Collector |   Sensor |        |           |
+  *    +--------+        +-----------|   and    |        +-----------+
+  *                      | Running   |   Running|
+  *    +--------+        | Speed    -|-> Speed  |
+  *    | Running|------> | Collector |   Sensor |
+  *    | Speed  |        +-----------|----------+
+  *    | Sensor |
+  *    +--------+
+  */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -134,29 +134,42 @@
 #define HART_RATE_SERVICE_UUID_IDX      0                                           /**< Hart Rate service UUID index in array. */
 #define RSCS_SERVICE_UUID_IDX           1                                           /**< RSCS service UUID index in array. */
 
-/**@brief   Priority of the application BLE event handler.
- * @note    You shouldn't need to modify this value.
- */
+  /**@brief   Priority of the application BLE event handler.
+   * @note    You shouldn't need to modify this value.
+   */
 #define APP_BLE_OBSERVER_PRIO           3
 
-/*----------------------------------------------------------
-   | Preamble | Dest Addr | Src Addr | Seq Num  | Hop Count |
-  ----------------------------------------------------------
-   |    8     |     8     |    8     |     8    |     8     |
-  ----------------------------------------------------------
-*/
-char   BLE_Rx_Buffer[4];
+   /*----------------------------------------------------------
+	  | Preamble | Dest Addr | Src Addr | Seq Num  | Hop Count |
+	 ----------------------------------------------------------
+	  |    8     |     8     |    8     |     8    |     8     |
+	 ----------------------------------------------------------
+   */
+char   BLE_Rx_Tx_Buffer[5];
 int n;
-typedef  struct{
-                unsigned preamble:8;
-                unsigned dst_addr:8;
-                unsigned source_addr:8;                
-                unsigned seq_num:8;
-                unsigned hopcount:8;
-               } BLE_Rx_Tx_Buffer_t;
+//typedef  struct{
+//                unsigned preamble:8;
+//                unsigned dst_addr:8;
+//                unsigned source_addr:8;                
+//                unsigned seq_num:8;
+//                unsigned hopcount:8;
+//               } BLE_Rx_Tx_Buffer_t;
 
-int8_t dst_value=0;//recent destination
 
+typedef  struct {
+	uint16_t nordic_num;//0x56,0x00
+	uint8_t preamble;
+	uint8_t dst_addr;
+	uint8_t source_addr;
+	uint8_t seq_num;
+	uint8_t hopcount;
+} BLE_Rx_Tx_Buffer_t;
+
+int8_t dst_value = 0;//recent destination
+
+uint8_t pre_seq_num[4] = { '\0' };
+uint8_t recent_dst= 0x00 ;//recent destination
+uint8_t recent_rssi=-100;
 
 
 
@@ -171,7 +184,7 @@ BLE_ADVERTISING_DEF(m_advertising);                                 /**< Adverti
 BLE_DB_DISCOVERY_ARRAY_DEF(m_db_discovery, 2);                      /**< Database discovery module instances. */
 NRF_BLE_SCAN_DEF(m_scan);                                           /**< Scanning module instance. */
 
-static uint16_t m_conn_handle_hrs_c  = BLE_CONN_HANDLE_INVALID;     /**< Connection handle for the HRS central application */
+static uint16_t m_conn_handle_hrs_c = BLE_CONN_HANDLE_INVALID;     /**< Connection handle for the HRS central application */
 static uint16_t m_conn_handle_rscs_c = BLE_CONN_HANDLE_INVALID;     /**< Connection handle for the RSC central application */
 
 /**@brief Names that the central application scans for, and that are advertised by the peripherals.
@@ -184,20 +197,20 @@ static char const m_target_periph_name[] = "";
  */
 static ble_uuid_t m_adv_uuids[] =
 {
-    {BLE_UUID_HEART_RATE_SERVICE,        BLE_UUID_TYPE_BLE},
-    {BLE_UUID_RUNNING_SPEED_AND_CADENCE, BLE_UUID_TYPE_BLE}
+	{BLE_UUID_HEART_RATE_SERVICE,        BLE_UUID_TYPE_BLE},
+	{BLE_UUID_RUNNING_SPEED_AND_CADENCE, BLE_UUID_TYPE_BLE}
 };
 
 
 static ble_gap_scan_params_t m_scan_param =                 /**< Scan parameters requested for scanning and connection. */
 {
-    .active        = 0x01,
-    .interval      = NRF_BLE_SCAN_SCAN_INTERVAL,
-    .window        = NRF_BLE_SCAN_SCAN_WINDOW,
-    .filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
-    .timeout       = NRF_BLE_SCAN_SCAN_DURATION,
-    .scan_phys     = BLE_GAP_PHY_1MBPS,
-    .extended      = true,
+	.active = 0x01,
+	.interval = NRF_BLE_SCAN_SCAN_INTERVAL,
+	.window = NRF_BLE_SCAN_SCAN_WINDOW,
+	.filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
+	.timeout = NRF_BLE_SCAN_SCAN_DURATION,
+	.scan_phys = BLE_GAP_PHY_1MBPS,
+	.extended = true,
 };
 
 
@@ -214,7 +227,7 @@ static ble_gap_scan_params_t m_scan_param =                 /**< Scan parameters
  */
 void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 {
-    app_error_handler(0xDEADBEEF, line_num, p_file_name);
+	app_error_handler(0xDEADBEEF, line_num, p_file_name);
 }
 
 /**@brief Function for handling errors from the Connection Parameters module.
@@ -223,33 +236,33 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
  */
 static void conn_params_error_handler(uint32_t nrf_error)
 {
-    APP_ERROR_HANDLER(nrf_error);
+	APP_ERROR_HANDLER(nrf_error);
 }
 
 
 static void scan_evt_handler(scan_evt_t const * p_scan_evt)
 {
-    ret_code_t err_code;
-    ble_gap_evt_adv_report_t const * p_adv = 
-                   p_scan_evt->params.filter_match.p_adv_report;
-    ble_gap_scan_params_t    const * p_scan_param = 
-                   p_scan_evt->p_scan_params;
+	ret_code_t err_code;
+	ble_gap_evt_adv_report_t const * p_adv =
+		p_scan_evt->params.filter_match.p_adv_report;
+	ble_gap_scan_params_t    const * p_scan_param =
+		p_scan_evt->p_scan_params;
 
-    switch(p_scan_evt->scan_evt_id)
-    {
-        case NRF_BLE_SCAN_EVT_FILTER_MATCH:
-        {
-            // Initiate connection.
-            err_code = sd_ble_gap_connect(&p_adv->peer_addr,
-                                          p_scan_param,
-                                          &m_scan.conn_params,
-                                          APP_BLE_CONN_CFG_TAG);
-            APP_ERROR_CHECK(err_code);
-        } break;
+	switch (p_scan_evt->scan_evt_id)
+	{
+	case NRF_BLE_SCAN_EVT_FILTER_MATCH:
+	{
+		// Initiate connection.
+		err_code = sd_ble_gap_connect(&p_adv->peer_addr,
+			p_scan_param,
+			&m_scan.conn_params,
+			APP_BLE_CONN_CFG_TAG);
+		APP_ERROR_CHECK(err_code);
+	} break;
 
-        default:
-            break;
-    }
+	default:
+		break;
+	}
 }
 
 
@@ -257,40 +270,40 @@ static void scan_evt_handler(scan_evt_t const * p_scan_evt)
  */
 static void scan_init(void)
 {
-    ret_code_t          err_code;
-    nrf_ble_scan_init_t init_scan;
+	ret_code_t          err_code;
+	nrf_ble_scan_init_t init_scan;
 
-    memset(&init_scan, 0, sizeof(init_scan));
+	memset(&init_scan, 0, sizeof(init_scan));
 
-    init_scan.p_scan_param = &m_scan_param;
+	init_scan.p_scan_param = &m_scan_param;
 
-    err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
-    APP_ERROR_CHECK(err_code);
+	err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
+	APP_ERROR_CHECK(err_code);
 
-    
 
-//    if (strlen(m_target_periph_name) != 0)
-//    {
-//        err_code = nrf_ble_scan_filter_set(&m_scan, 
-//                                           SCAN_NAME_FILTER, 
-//                                           m_target_periph_name);
-//        APP_ERROR_CHECK(err_code);
-//    }
-//
-//    err_code = nrf_ble_scan_filter_set(&m_scan, 
-//                                       SCAN_UUID_FILTER, 
-//                                       &m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
-//    APP_ERROR_CHECK(err_code);
-//
-//    err_code = nrf_ble_scan_filter_set(&m_scan, 
-//                                       SCAN_UUID_FILTER, 
-//                                       &m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
-//    APP_ERROR_CHECK(err_code);
 
-    err_code = nrf_ble_scan_filters_enable(&m_scan, 
-                                           NRF_BLE_SCAN_ALL_FILTER, 
-                                           false);
-    APP_ERROR_CHECK(err_code);
+	//    if (strlen(m_target_periph_name) != 0)
+	//    {
+	//        err_code = nrf_ble_scan_filter_set(&m_scan, 
+	//                                           SCAN_NAME_FILTER, 
+	//                                           m_target_periph_name);
+	//        APP_ERROR_CHECK(err_code);
+	//    }
+	//
+	//    err_code = nrf_ble_scan_filter_set(&m_scan, 
+	//                                       SCAN_UUID_FILTER, 
+	//                                       &m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
+	//    APP_ERROR_CHECK(err_code);
+	//
+	//    err_code = nrf_ble_scan_filter_set(&m_scan, 
+	//                                       SCAN_UUID_FILTER, 
+	//                                       &m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
+	//    APP_ERROR_CHECK(err_code);
+
+	err_code = nrf_ble_scan_filters_enable(&m_scan,
+		NRF_BLE_SCAN_ALL_FILTER,
+		false);
+	APP_ERROR_CHECK(err_code);
 
 }
 
@@ -299,10 +312,10 @@ static void scan_init(void)
  */
 static void scan_start(void)
 {
-    ret_code_t err_code;
+	ret_code_t err_code;
 
-    err_code = nrf_ble_scan_start(&m_scan);
-    APP_ERROR_CHECK(err_code);
+	err_code = nrf_ble_scan_start(&m_scan);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -310,22 +323,22 @@ static void scan_start(void)
  */
 static void adv_scan_start(void)
 {
-    ret_code_t err_code;
+	ret_code_t err_code;
 
-    //check if there are no flash operations in progress
-    if (!nrf_fstorage_is_busy(NULL))
-    {
-        // Start scanning for peripherals and initiate connection to devices which
-        // advertise Heart Rate or Running speed and cadence UUIDs.
-        scan_start();
+	//check if there are no flash operations in progress
+	if (!nrf_fstorage_is_busy(NULL))
+	{
+		// Start scanning for peripherals and initiate connection to devices which
+		// advertise Heart Rate or Running speed and cadence UUIDs.
+		scan_start();
 
-        // Turn on the LED to signal scanning.
-        bsp_board_led_on(CENTRAL_SCANNING_LED);
+		// Turn on the LED to signal scanning.
+		bsp_board_led_on(CENTRAL_SCANNING_LED);
 
-        // Start advertising.
-        err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
-        APP_ERROR_CHECK(err_code);
-    }
+		// Start advertising.
+		err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
+		APP_ERROR_CHECK(err_code);
+	}
 }
 
 
@@ -335,19 +348,19 @@ static void adv_scan_start(void)
  */
 static void pm_evt_handler(pm_evt_t const * p_evt)
 {
-    pm_handler_on_pm_evt(p_evt);
-    pm_handler_disconnect_on_sec_failure(p_evt);
-    pm_handler_flash_clean(p_evt);
+	pm_handler_on_pm_evt(p_evt);
+	pm_handler_disconnect_on_sec_failure(p_evt);
+	pm_handler_flash_clean(p_evt);
 
-    switch (p_evt->evt_id)
-    {
-        case PM_EVT_PEERS_DELETE_SUCCEEDED:
-            adv_scan_start();
-            break;
+	switch (p_evt->evt_id)
+	{
+	case PM_EVT_PEERS_DELETE_SUCCEEDED:
+		adv_scan_start();
+		break;
 
-        default:
-            break;
-    }
+	default:
+		break;
+	}
 }
 
 
@@ -355,36 +368,36 @@ static void pm_evt_handler(pm_evt_t const * p_evt)
  */
 static void filter_settings_change(void)
 {
-    ret_code_t err_code;
+	ret_code_t err_code;
 
-    err_code = nrf_ble_scan_all_filter_remove(&m_scan);
-    APP_ERROR_CHECK(err_code);
+	err_code = nrf_ble_scan_all_filter_remove(&m_scan);
+	APP_ERROR_CHECK(err_code);
 
-    if (strlen(m_target_periph_name) != 0)
-    {
-        err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                           SCAN_NAME_FILTER, 
-                                           m_target_periph_name);
-        APP_ERROR_CHECK(err_code);
-    }
+	if (strlen(m_target_periph_name) != 0)
+	{
+		err_code = nrf_ble_scan_filter_set(&m_scan,
+			SCAN_NAME_FILTER,
+			m_target_periph_name);
+		APP_ERROR_CHECK(err_code);
+	}
 
-    if ((m_conn_handle_hrs_c != BLE_CONN_HANDLE_INVALID) && 
-        (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID))
-    {
-        err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                           SCAN_UUID_FILTER, 
-                                           &m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
-    }
+	if ((m_conn_handle_hrs_c != BLE_CONN_HANDLE_INVALID) &&
+		(m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID))
+	{
+		err_code = nrf_ble_scan_filter_set(&m_scan,
+			SCAN_UUID_FILTER,
+			&m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
+	}
 
-    if ((m_conn_handle_rscs_c != BLE_CONN_HANDLE_INVALID) && 
-         m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID)
-    {
-        err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                           SCAN_UUID_FILTER, 
-                                           &m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
-    }
+	if ((m_conn_handle_rscs_c != BLE_CONN_HANDLE_INVALID) &&
+		m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID)
+	{
+		err_code = nrf_ble_scan_filter_set(&m_scan,
+			SCAN_UUID_FILTER,
+			&m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
+	}
 
-    APP_ERROR_CHECK(err_code);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -392,58 +405,58 @@ static void filter_settings_change(void)
  */
 static void hrs_c_evt_handler(ble_hrs_c_t * p_hrs_c, ble_hrs_c_evt_t * p_hrs_c_evt)
 {
-    switch (p_hrs_c_evt->evt_type)
-    {
-        case BLE_HRS_C_EVT_DISCOVERY_COMPLETE:
-        {
-            if (m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID)
-            {
-                ret_code_t err_code;
+	switch (p_hrs_c_evt->evt_type)
+	{
+	case BLE_HRS_C_EVT_DISCOVERY_COMPLETE:
+	{
+		if (m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID)
+		{
+			ret_code_t err_code;
 
-                m_conn_handle_hrs_c = p_hrs_c_evt->conn_handle;
-                NRF_LOG_INFO("HRS discovered on conn_handle 0x%x", m_conn_handle_hrs_c);
+			m_conn_handle_hrs_c = p_hrs_c_evt->conn_handle;
+			NRF_LOG_INFO("HRS discovered on conn_handle 0x%x", m_conn_handle_hrs_c);
 
-                filter_settings_change();
+			filter_settings_change();
 
-                err_code = ble_hrs_c_handles_assign(p_hrs_c,
-                                                    m_conn_handle_hrs_c,
-                                                    &p_hrs_c_evt->params.peer_db);
-                APP_ERROR_CHECK(err_code);
-                // Initiate bonding.
-                err_code = pm_conn_secure(m_conn_handle_hrs_c, false);
-                if (err_code != NRF_ERROR_BUSY)
-                {
-                    APP_ERROR_CHECK(err_code);
-                }
+			err_code = ble_hrs_c_handles_assign(p_hrs_c,
+				m_conn_handle_hrs_c,
+				&p_hrs_c_evt->params.peer_db);
+			APP_ERROR_CHECK(err_code);
+			// Initiate bonding.
+			err_code = pm_conn_secure(m_conn_handle_hrs_c, false);
+			if (err_code != NRF_ERROR_BUSY)
+			{
+				APP_ERROR_CHECK(err_code);
+			}
 
-                // Heart rate service discovered. Enable notification of Heart Rate Measurement.
-                err_code = ble_hrs_c_hrm_notif_enable(p_hrs_c);
-                APP_ERROR_CHECK(err_code);
-            }
-        } break; // BLE_HRS_C_EVT_DISCOVERY_COMPLETE
+			// Heart rate service discovered. Enable notification of Heart Rate Measurement.
+			err_code = ble_hrs_c_hrm_notif_enable(p_hrs_c);
+			APP_ERROR_CHECK(err_code);
+		}
+	} break; // BLE_HRS_C_EVT_DISCOVERY_COMPLETE
 
-        case BLE_HRS_C_EVT_HRM_NOTIFICATION:
-        {
-            ret_code_t err_code;
+	case BLE_HRS_C_EVT_HRM_NOTIFICATION:
+	{
+		ret_code_t err_code;
 
-            NRF_LOG_INFO("Heart Rate = %d", p_hrs_c_evt->params.hrm.hr_value);
+		NRF_LOG_INFO("Heart Rate = %d", p_hrs_c_evt->params.hrm.hr_value);
 
-            err_code = ble_hrs_heart_rate_measurement_send(&m_hrs, p_hrs_c_evt->params.hrm.hr_value);
-            if ((err_code != NRF_SUCCESS) &&
-                (err_code != NRF_ERROR_INVALID_STATE) &&
-                (err_code != NRF_ERROR_RESOURCES) &&
-                (err_code != NRF_ERROR_BUSY) &&
-                (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
-                )
-            {
-                APP_ERROR_HANDLER(err_code);
-            }
-        } break; // BLE_HRS_C_EVT_HRM_NOTIFICATION
+		err_code = ble_hrs_heart_rate_measurement_send(&m_hrs, p_hrs_c_evt->params.hrm.hr_value);
+		if ((err_code != NRF_SUCCESS) &&
+			(err_code != NRF_ERROR_INVALID_STATE) &&
+			(err_code != NRF_ERROR_RESOURCES) &&
+			(err_code != NRF_ERROR_BUSY) &&
+			(err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+			)
+		{
+			APP_ERROR_HANDLER(err_code);
+		}
+	} break; // BLE_HRS_C_EVT_HRM_NOTIFICATION
 
-        default:
-            // No implementation needed.
-            break;
-    }
+	default:
+		// No implementation needed.
+		break;
+	}
 }
 
 
@@ -451,70 +464,70 @@ static void hrs_c_evt_handler(ble_hrs_c_t * p_hrs_c, ble_hrs_c_evt_t * p_hrs_c_e
  */
 static void rscs_c_evt_handler(ble_rscs_c_t * p_rscs_c, ble_rscs_c_evt_t * p_rscs_c_evt)
 {
-    switch (p_rscs_c_evt->evt_type)
-    {
-        case BLE_RSCS_C_EVT_DISCOVERY_COMPLETE:
-        {
-            if (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID)
-            {
-                ret_code_t err_code;
+	switch (p_rscs_c_evt->evt_type)
+	{
+	case BLE_RSCS_C_EVT_DISCOVERY_COMPLETE:
+	{
+		if (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID)
+		{
+			ret_code_t err_code;
 
-                m_conn_handle_rscs_c = p_rscs_c_evt->conn_handle;
-                NRF_LOG_INFO("Running Speed and Cadence service discovered on conn_handle 0x%x",
-                             m_conn_handle_rscs_c);
+			m_conn_handle_rscs_c = p_rscs_c_evt->conn_handle;
+			NRF_LOG_INFO("Running Speed and Cadence service discovered on conn_handle 0x%x",
+				m_conn_handle_rscs_c);
 
-                filter_settings_change();
+			filter_settings_change();
 
-                err_code = ble_rscs_c_handles_assign(p_rscs_c,
-                                                    m_conn_handle_rscs_c,
-                                                    &p_rscs_c_evt->params.rscs_db);
-                APP_ERROR_CHECK(err_code);
+			err_code = ble_rscs_c_handles_assign(p_rscs_c,
+				m_conn_handle_rscs_c,
+				&p_rscs_c_evt->params.rscs_db);
+			APP_ERROR_CHECK(err_code);
 
-                // Initiate bonding.
-                err_code = pm_conn_secure(m_conn_handle_rscs_c, false);
-                if (err_code != NRF_ERROR_BUSY)
-                {
-                    APP_ERROR_CHECK(err_code);
-                }
+			// Initiate bonding.
+			err_code = pm_conn_secure(m_conn_handle_rscs_c, false);
+			if (err_code != NRF_ERROR_BUSY)
+			{
+				APP_ERROR_CHECK(err_code);
+			}
 
-                // Running Speed Cadence Service discovered. Enable notifications.
-                err_code = ble_rscs_c_rsc_notif_enable(p_rscs_c);
-                APP_ERROR_CHECK(err_code);
-            }
-        } break; // BLE_RSCS_C_EVT_DISCOVERY_COMPLETE:
+			// Running Speed Cadence Service discovered. Enable notifications.
+			err_code = ble_rscs_c_rsc_notif_enable(p_rscs_c);
+			APP_ERROR_CHECK(err_code);
+		}
+	} break; // BLE_RSCS_C_EVT_DISCOVERY_COMPLETE:
 
-        case BLE_RSCS_C_EVT_RSC_NOTIFICATION:
-        {
-            ret_code_t      err_code;
-            ble_rscs_meas_t rscs_measurment;
+	case BLE_RSCS_C_EVT_RSC_NOTIFICATION:
+	{
+		ret_code_t      err_code;
+		ble_rscs_meas_t rscs_measurment;
 
-            NRF_LOG_INFO("Speed      = %d", p_rscs_c_evt->params.rsc.inst_speed);
+		NRF_LOG_INFO("Speed      = %d", p_rscs_c_evt->params.rsc.inst_speed);
 
-            rscs_measurment.is_running                  = p_rscs_c_evt->params.rsc.is_running;
-            rscs_measurment.is_inst_stride_len_present  = p_rscs_c_evt->params.rsc.is_inst_stride_len_present;
-            rscs_measurment.is_total_distance_present   = p_rscs_c_evt->params.rsc.is_total_distance_present;
+		rscs_measurment.is_running = p_rscs_c_evt->params.rsc.is_running;
+		rscs_measurment.is_inst_stride_len_present = p_rscs_c_evt->params.rsc.is_inst_stride_len_present;
+		rscs_measurment.is_total_distance_present = p_rscs_c_evt->params.rsc.is_total_distance_present;
 
-            rscs_measurment.inst_stride_length = p_rscs_c_evt->params.rsc.inst_stride_length;
-            rscs_measurment.inst_cadence       = p_rscs_c_evt->params.rsc.inst_cadence;
-            rscs_measurment.inst_speed         = p_rscs_c_evt->params.rsc.inst_speed;
-            rscs_measurment.total_distance     = p_rscs_c_evt->params.rsc.total_distance;
+		rscs_measurment.inst_stride_length = p_rscs_c_evt->params.rsc.inst_stride_length;
+		rscs_measurment.inst_cadence = p_rscs_c_evt->params.rsc.inst_cadence;
+		rscs_measurment.inst_speed = p_rscs_c_evt->params.rsc.inst_speed;
+		rscs_measurment.total_distance = p_rscs_c_evt->params.rsc.total_distance;
 
-            err_code = ble_rscs_measurement_send(&m_rscs, &rscs_measurment);
-            if ((err_code != NRF_SUCCESS) &&
-                (err_code != NRF_ERROR_INVALID_STATE) &&
-                (err_code != NRF_ERROR_RESOURCES) &&
-                (err_code != NRF_ERROR_BUSY) &&
-                (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
-                )
-            {
-                APP_ERROR_HANDLER(err_code);
-            }
-        } break; // BLE_RSCS_C_EVT_RSC_NOTIFICATION
+		err_code = ble_rscs_measurement_send(&m_rscs, &rscs_measurment);
+		if ((err_code != NRF_SUCCESS) &&
+			(err_code != NRF_ERROR_INVALID_STATE) &&
+			(err_code != NRF_ERROR_RESOURCES) &&
+			(err_code != NRF_ERROR_BUSY) &&
+			(err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+			)
+		{
+			APP_ERROR_HANDLER(err_code);
+		}
+	} break; // BLE_RSCS_C_EVT_RSC_NOTIFICATION
 
-        default:
-            // No implementation needed.
-            break;
-    }
+	default:
+		// No implementation needed.
+		break;
+	}
 }
 
 
@@ -524,15 +537,15 @@ static void rscs_c_evt_handler(ble_rscs_c_t * p_rscs_c, ble_rscs_c_evt_t * p_rsc
  */
 static void multi_qwr_conn_handle_assign(uint16_t conn_handle)
 {
-    for (uint32_t i = 0; i < NRF_SDH_BLE_TOTAL_LINK_COUNT; i++)
-    {
-        if (m_qwr[i].conn_handle == BLE_CONN_HANDLE_INVALID)
-        {
-            ret_code_t err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr[i], conn_handle);
-            APP_ERROR_CHECK(err_code);
-            break;
-        }
-    }
+	for (uint32_t i = 0; i < NRF_SDH_BLE_TOTAL_LINK_COUNT; i++)
+	{
+		if (m_qwr[i].conn_handle == BLE_CONN_HANDLE_INVALID)
+		{
+			ret_code_t err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr[i], conn_handle);
+			APP_ERROR_CHECK(err_code);
+			break;
+		}
+	}
 }
 
 
@@ -546,145 +559,145 @@ static void multi_qwr_conn_handle_assign(uint16_t conn_handle)
  */
 static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
 {
-    ret_code_t            err_code;
-    ble_gap_evt_t const * p_gap_evt = &p_ble_evt->evt.gap_evt;
+	ret_code_t            err_code;
+	ble_gap_evt_t const * p_gap_evt = &p_ble_evt->evt.gap_evt;
 
-    switch (p_ble_evt->header.evt_id)
-    {
-        // Upon connection, check which peripheral is connected (HR or RSC), initiate DB
-        // discovery, update LEDs status, and resume scanning, if necessary.
-        case BLE_GAP_EVT_CONNECTED:
-        {
-            NRF_LOG_INFO("Central connected");
-            // If no Heart Rate sensor or RSC sensor is currently connected, try to find them on this peripheral.
-            if (   (m_conn_handle_hrs_c  == BLE_CONN_HANDLE_INVALID)
-                || (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID))
-            {
-                NRF_LOG_INFO("Attempt to find HRS or RSC on conn_handle 0x%x", p_gap_evt->conn_handle);
+	switch (p_ble_evt->header.evt_id)
+	{
+		// Upon connection, check which peripheral is connected (HR or RSC), initiate DB
+		// discovery, update LEDs status, and resume scanning, if necessary.
+	case BLE_GAP_EVT_CONNECTED:
+	{
+		NRF_LOG_INFO("Central connected");
+		// If no Heart Rate sensor or RSC sensor is currently connected, try to find them on this peripheral.
+		if ((m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID)
+			|| (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID))
+		{
+			NRF_LOG_INFO("Attempt to find HRS or RSC on conn_handle 0x%x", p_gap_evt->conn_handle);
 
-                err_code = ble_db_discovery_start(&m_db_discovery[0], p_gap_evt->conn_handle);
-                if (err_code == NRF_ERROR_BUSY)
-                {
-                    err_code = ble_db_discovery_start(&m_db_discovery[1], p_gap_evt->conn_handle);
-                    APP_ERROR_CHECK(err_code);
-                }
-                else
-                {
-                    APP_ERROR_CHECK(err_code);
-                }
-            }
+			err_code = ble_db_discovery_start(&m_db_discovery[0], p_gap_evt->conn_handle);
+			if (err_code == NRF_ERROR_BUSY)
+			{
+				err_code = ble_db_discovery_start(&m_db_discovery[1], p_gap_evt->conn_handle);
+				APP_ERROR_CHECK(err_code);
+			}
+			else
+			{
+				APP_ERROR_CHECK(err_code);
+			}
+		}
 
-            // Assign connection handle to the QWR module.
-            multi_qwr_conn_handle_assign(p_gap_evt->conn_handle);
+		// Assign connection handle to the QWR module.
+		multi_qwr_conn_handle_assign(p_gap_evt->conn_handle);
 
-            // Update LEDs status, and check whether to look for more peripherals to connect to.
-            bsp_board_led_on(CENTRAL_CONNECTED_LED);
-            if (ble_conn_state_central_conn_count() == NRF_SDH_BLE_CENTRAL_LINK_COUNT)
-            {
-                bsp_board_led_off(CENTRAL_SCANNING_LED);
-            }
-            else
-            {
-                // Resume scanning.
-                bsp_board_led_on(CENTRAL_SCANNING_LED);
-                scan_start();
-            }
-        } break; // BLE_GAP_EVT_CONNECTED
+		// Update LEDs status, and check whether to look for more peripherals to connect to.
+		bsp_board_led_on(CENTRAL_CONNECTED_LED);
+		if (ble_conn_state_central_conn_count() == NRF_SDH_BLE_CENTRAL_LINK_COUNT)
+		{
+			bsp_board_led_off(CENTRAL_SCANNING_LED);
+		}
+		else
+		{
+			// Resume scanning.
+			bsp_board_led_on(CENTRAL_SCANNING_LED);
+			scan_start();
+		}
+	} break; // BLE_GAP_EVT_CONNECTED
 
-        // Upon disconnection, reset the connection handle of the peer that disconnected,
-        // update the LEDs status and start scanning again.
-        case BLE_GAP_EVT_DISCONNECTED:
-        {
-            if (p_gap_evt->conn_handle == m_conn_handle_hrs_c)
-            {
-                NRF_LOG_INFO("HRS central disconnected (reason: %d)",
-                             p_gap_evt->params.disconnected.reason);
+	// Upon disconnection, reset the connection handle of the peer that disconnected,
+	// update the LEDs status and start scanning again.
+	case BLE_GAP_EVT_DISCONNECTED:
+	{
+		if (p_gap_evt->conn_handle == m_conn_handle_hrs_c)
+		{
+			NRF_LOG_INFO("HRS central disconnected (reason: %d)",
+				p_gap_evt->params.disconnected.reason);
 
-                m_conn_handle_hrs_c = BLE_CONN_HANDLE_INVALID;
-                
-                err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                                   SCAN_UUID_FILTER, 
-                                                   &m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
-                APP_ERROR_CHECK(err_code);
-            }
-            if (p_gap_evt->conn_handle == m_conn_handle_rscs_c)
-            {
-                NRF_LOG_INFO("RSC central disconnected (reason: %d)",
-                             p_gap_evt->params.disconnected.reason);
+			m_conn_handle_hrs_c = BLE_CONN_HANDLE_INVALID;
 
-                m_conn_handle_rscs_c = BLE_CONN_HANDLE_INVALID;
+			err_code = nrf_ble_scan_filter_set(&m_scan,
+				SCAN_UUID_FILTER,
+				&m_adv_uuids[HART_RATE_SERVICE_UUID_IDX]);
+			APP_ERROR_CHECK(err_code);
+		}
+		if (p_gap_evt->conn_handle == m_conn_handle_rscs_c)
+		{
+			NRF_LOG_INFO("RSC central disconnected (reason: %d)",
+				p_gap_evt->params.disconnected.reason);
 
-                err_code = nrf_ble_scan_filter_set(&m_scan, 
-                                                   SCAN_UUID_FILTER, 
-                                                   &m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
-                APP_ERROR_CHECK(err_code);
-            }
+			m_conn_handle_rscs_c = BLE_CONN_HANDLE_INVALID;
 
-            if (   (m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID)
-                || (m_conn_handle_hrs_c  == BLE_CONN_HANDLE_INVALID))
-            {
-                // Start scanning.
-                scan_start();
+			err_code = nrf_ble_scan_filter_set(&m_scan,
+				SCAN_UUID_FILTER,
+				&m_adv_uuids[RSCS_SERVICE_UUID_IDX]);
+			APP_ERROR_CHECK(err_code);
+		}
 
-                // Update LEDs status.
-                bsp_board_led_on(CENTRAL_SCANNING_LED);
-            }
+		if ((m_conn_handle_rscs_c == BLE_CONN_HANDLE_INVALID)
+			|| (m_conn_handle_hrs_c == BLE_CONN_HANDLE_INVALID))
+		{
+			// Start scanning.
+			scan_start();
 
-            if (ble_conn_state_central_conn_count() == 0)
-            {
-                bsp_board_led_off(CENTRAL_CONNECTED_LED);
-            }
-        } break; // BLE_GAP_EVT_DISCONNECTED
+			// Update LEDs status.
+			bsp_board_led_on(CENTRAL_SCANNING_LED);
+		}
 
-        case BLE_GAP_EVT_TIMEOUT:
-        {
-            // No timeout for scanning is specified, so only connection attemps can timeout.
-            if (p_gap_evt->params.timeout.src == BLE_GAP_TIMEOUT_SRC_CONN)
-            {
-                NRF_LOG_INFO("Connection Request timed out.");
-            }
-        } break;
+		if (ble_conn_state_central_conn_count() == 0)
+		{
+			bsp_board_led_off(CENTRAL_CONNECTED_LED);
+		}
+	} break; // BLE_GAP_EVT_DISCONNECTED
 
-        case BLE_GAP_EVT_CONN_PARAM_UPDATE_REQUEST:
-        {
-            // Accept parameters requested by peer.
-            err_code = sd_ble_gap_conn_param_update(p_gap_evt->conn_handle,
-                                        &p_gap_evt->params.conn_param_update_request.conn_params);
-            APP_ERROR_CHECK(err_code);
-        } break;
+	case BLE_GAP_EVT_TIMEOUT:
+	{
+		// No timeout for scanning is specified, so only connection attemps can timeout.
+		if (p_gap_evt->params.timeout.src == BLE_GAP_TIMEOUT_SRC_CONN)
+		{
+			NRF_LOG_INFO("Connection Request timed out.");
+		}
+	} break;
 
-        case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
-        {
-            NRF_LOG_DEBUG("PHY update request.");
-            ble_gap_phys_t const phys =
-            {
-                .rx_phys = BLE_GAP_PHY_AUTO,
-                .tx_phys = BLE_GAP_PHY_AUTO,
-            };
-            err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
-            APP_ERROR_CHECK(err_code);
-        } break;
+	case BLE_GAP_EVT_CONN_PARAM_UPDATE_REQUEST:
+	{
+		// Accept parameters requested by peer.
+		err_code = sd_ble_gap_conn_param_update(p_gap_evt->conn_handle,
+			&p_gap_evt->params.conn_param_update_request.conn_params);
+		APP_ERROR_CHECK(err_code);
+	} break;
 
-        case BLE_GATTC_EVT_TIMEOUT:
-            // Disconnect on GATT Client timeout event.
-            NRF_LOG_DEBUG("GATT Client Timeout.");
-            err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gattc_evt.conn_handle,
-                                             BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-            APP_ERROR_CHECK(err_code);
-            break;
+	case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
+	{
+		NRF_LOG_DEBUG("PHY update request.");
+		ble_gap_phys_t const phys =
+		{
+			.rx_phys = BLE_GAP_PHY_AUTO,
+			.tx_phys = BLE_GAP_PHY_AUTO,
+		};
+		err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
+		APP_ERROR_CHECK(err_code);
+	} break;
 
-        case BLE_GATTS_EVT_TIMEOUT:
-            // Disconnect on GATT Server timeout event.
-            NRF_LOG_DEBUG("GATT Server Timeout.");
-            err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gatts_evt.conn_handle,
-                                             BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-            APP_ERROR_CHECK(err_code);
-            break;
+	case BLE_GATTC_EVT_TIMEOUT:
+		// Disconnect on GATT Client timeout event.
+		NRF_LOG_DEBUG("GATT Client Timeout.");
+		err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gattc_evt.conn_handle,
+			BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+		APP_ERROR_CHECK(err_code);
+		break;
 
-        default:
-            // No implementation needed.
-            break;
-    }
+	case BLE_GATTS_EVT_TIMEOUT:
+		// Disconnect on GATT Server timeout event.
+		NRF_LOG_DEBUG("GATT Server Timeout.");
+		err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gatts_evt.conn_handle,
+			BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+		APP_ERROR_CHECK(err_code);
+		break;
+
+	default:
+		// No implementation needed.
+		break;
+	}
 }
 
 
@@ -695,60 +708,60 @@ static void on_ble_central_evt(ble_evt_t const * p_ble_evt)
  */
 static void on_ble_peripheral_evt(ble_evt_t const * p_ble_evt)
 {
-    ret_code_t            err_code;
-    ble_gap_evt_t const * p_gap_evt = &p_ble_evt->evt.gap_evt;
+	ret_code_t            err_code;
+	ble_gap_evt_t const * p_gap_evt = &p_ble_evt->evt.gap_evt;
 
-    switch (p_ble_evt->header.evt_id)
-    {
-        case BLE_GAP_EVT_CONNECTED:
-            NRF_LOG_INFO("Peripheral connected");
-            bsp_board_led_off(PERIPHERAL_ADVERTISING_LED);
-            bsp_board_led_on(PERIPHERAL_CONNECTED_LED);
+	switch (p_ble_evt->header.evt_id)
+	{
+	case BLE_GAP_EVT_CONNECTED:
+		NRF_LOG_INFO("Peripheral connected");
+		bsp_board_led_off(PERIPHERAL_ADVERTISING_LED);
+		bsp_board_led_on(PERIPHERAL_CONNECTED_LED);
 
-            // Assign connection handle to the QWR module.
-            multi_qwr_conn_handle_assign(p_ble_evt->evt.gap_evt.conn_handle);
-            break;
+		// Assign connection handle to the QWR module.
+		multi_qwr_conn_handle_assign(p_ble_evt->evt.gap_evt.conn_handle);
+		break;
 
-        case BLE_GAP_EVT_DISCONNECTED:
-            NRF_LOG_INFO("Peripheral disconnected. conn_handle: 0x%x, reason: 0x%x",
-                         p_gap_evt->conn_handle,
-                         p_gap_evt->params.disconnected.reason);
+	case BLE_GAP_EVT_DISCONNECTED:
+		NRF_LOG_INFO("Peripheral disconnected. conn_handle: 0x%x, reason: 0x%x",
+			p_gap_evt->conn_handle,
+			p_gap_evt->params.disconnected.reason);
 
-            bsp_board_led_off(PERIPHERAL_CONNECTED_LED);
-            break;
+		bsp_board_led_off(PERIPHERAL_CONNECTED_LED);
+		break;
 
-        case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
-        {
-            NRF_LOG_DEBUG("PHY update request.");
-            ble_gap_phys_t const phys =
-            {
-                .rx_phys = BLE_GAP_PHY_AUTO,
-                .tx_phys = BLE_GAP_PHY_AUTO,
-            };
-            err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
-            APP_ERROR_CHECK(err_code);
-        } break;
+	case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
+	{
+		NRF_LOG_DEBUG("PHY update request.");
+		ble_gap_phys_t const phys =
+		{
+			.rx_phys = BLE_GAP_PHY_AUTO,
+			.tx_phys = BLE_GAP_PHY_AUTO,
+		};
+		err_code = sd_ble_gap_phy_update(p_ble_evt->evt.gap_evt.conn_handle, &phys);
+		APP_ERROR_CHECK(err_code);
+	} break;
 
-        case BLE_GATTC_EVT_TIMEOUT:
-            // Disconnect on GATT Client timeout event.
-            NRF_LOG_DEBUG("GATT Client Timeout.");
-            err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gattc_evt.conn_handle,
-                                             BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-            APP_ERROR_CHECK(err_code);
-            break;
+	case BLE_GATTC_EVT_TIMEOUT:
+		// Disconnect on GATT Client timeout event.
+		NRF_LOG_DEBUG("GATT Client Timeout.");
+		err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gattc_evt.conn_handle,
+			BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+		APP_ERROR_CHECK(err_code);
+		break;
 
-        case BLE_GATTS_EVT_TIMEOUT:
-            // Disconnect on GATT Server timeout event.
-            NRF_LOG_DEBUG("GATT Server Timeout.");
-            err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gatts_evt.conn_handle,
-                                             BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-            APP_ERROR_CHECK(err_code);
-            break;
+	case BLE_GATTS_EVT_TIMEOUT:
+		// Disconnect on GATT Server timeout event.
+		NRF_LOG_DEBUG("GATT Server Timeout.");
+		err_code = sd_ble_gap_disconnect(p_ble_evt->evt.gatts_evt.conn_handle,
+			BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+		APP_ERROR_CHECK(err_code);
+		break;
 
-        default:
-            // No implementation needed.
-            break;
-    }
+	default:
+		// No implementation needed.
+		break;
+	}
 }
 
 
@@ -758,24 +771,24 @@ static void on_ble_peripheral_evt(ble_evt_t const * p_ble_evt)
  */
 static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
 {
-    switch (ble_adv_evt)
-    {
-        case BLE_ADV_EVT_FAST:
-        {
-            NRF_LOG_INFO("Fast advertising.");
-            bsp_board_led_on(PERIPHERAL_ADVERTISING_LED);
-        } break;
+	switch (ble_adv_evt)
+	{
+	case BLE_ADV_EVT_FAST:
+	{
+		NRF_LOG_INFO("Fast advertising.");
+		bsp_board_led_on(PERIPHERAL_ADVERTISING_LED);
+	} break;
 
-        case BLE_ADV_EVT_IDLE:
-        {
-            ret_code_t err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
-            APP_ERROR_CHECK(err_code);
-        } break;
+	case BLE_ADV_EVT_IDLE:
+	{
+		ret_code_t err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
+		APP_ERROR_CHECK(err_code);
+	} break;
 
-        default:
-            // No implementation needed.
-            break;
-    }
+	default:
+		// No implementation needed.
+		break;
+	}
 }
 
 
@@ -785,7 +798,7 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
  */
 static bool ble_evt_is_advertising_timeout(ble_evt_t const * p_ble_evt)
 {
-    return (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_SET_TERMINATED);
+	return (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_SET_TERMINATED);
 }
 
 
@@ -796,123 +809,157 @@ static bool ble_evt_is_advertising_timeout(ble_evt_t const * p_ble_evt)
  */
 static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 {
-    uint16_t conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-    uint16_t role        = ble_conn_state_role(conn_handle);
+	uint16_t conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
+	uint16_t role = ble_conn_state_role(conn_handle);
 
-    // Based on the role this device plays in the connection, dispatch to the right handler.
-    if (role == BLE_GAP_ROLE_PERIPH || ble_evt_is_advertising_timeout(p_ble_evt))
-    {
-        ble_hrs_on_ble_evt(p_ble_evt, &m_hrs);
-        ble_rscs_on_ble_evt(p_ble_evt, &m_rscs);
-        on_ble_peripheral_evt(p_ble_evt);
-    }
-    else if ((role == BLE_GAP_ROLE_CENTRAL) || (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_REPORT))
-    {
-        const ble_gap_evt_adv_report_t *p_adv_report = &p_ble_evt->evt.gap_evt.params.adv_report;
-        const ble_data_t *data = &p_adv_report->data;
+	// Based on the role this device plays in the connection, dispatch to the right handler.
+	if (role == BLE_GAP_ROLE_PERIPH || ble_evt_is_advertising_timeout(p_ble_evt))
+	{
+		ble_hrs_on_ble_evt(p_ble_evt, &m_hrs);
+		ble_rscs_on_ble_evt(p_ble_evt, &m_rscs);
+		on_ble_peripheral_evt(p_ble_evt);
+	}
+	else if ((role == BLE_GAP_ROLE_CENTRAL) || (p_ble_evt->header.evt_id == BLE_GAP_EVT_ADV_REPORT))
+	{
+		const ble_gap_evt_adv_report_t *p_adv_report = &p_ble_evt->evt.gap_evt.params.adv_report;
+		const ble_data_t *data = &p_adv_report->data;
 
-        int8_t *rssi_data = p_ble_evt->evt.gap_evt.params.adv_report.rssi;//get rssi value
+		int8_t *rssi_data = p_ble_evt->evt.gap_evt.params.adv_report.rssi;//get rssi value
 
-        uint16_t parsed_name_len;
-        uint16_t offset = 0;
-        uint8_t *name_data;
-        uint8_t *p_manufacture_data;
-        BLE_Rx_Tx_Buffer_t *p_tmp_Rxbuf;
-        uint8_t pre_seq_num[4]={'\0'};
-        uint8_t recent_dst=0x01;//recent destination
-        uint8_t assign_seq=0;//decide which source
+		uint16_t parsed_name_len;
+		uint16_t offset = 0;
+		uint8_t *name_data;
+		uint8_t *p_manufacture_data;
+		BLE_Rx_Tx_Buffer_t tempbuffer;
+		BLE_Rx_Tx_Buffer_t *p_tmp_Rxbuf = &tempbuffer;
+		//uint8_t pre_seq_num[4]={'\0'};
+		//uint8_t recent_dst = 0x02;//recent destination
+		uint8_t assign_seq = 0;//decide which source
 
 //        NRF_LOG_DEBUG("AD->");
 //        NRF_LOG_HEXDUMP_DEBUG(data->p_data, data->len);
 //        NRF_LOG_DEBUG("<-AD");
 
-        // *mfd_data is a pointer to BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA data
-         
-        name_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
-        parsed_name_len = ble_advdata_search(data->p_data,
-                                         data->len,
-                                         &offset,
-                                         BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
-        
-       
-        if(name_data != NULL)
-        {   
+		// *mfd_data is a pointer to BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA data
 
-            NRF_LOG_DEBUG("RSSI VALUE");
-            NRF_LOG_INFO("rssi =%d dBm",rssi_data);//print RSSI value
-
-            NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME");
-            NRF_LOG_HEXDUMP_DEBUG(name_data, parsed_name_len);
-        
-
-            data = &p_adv_report->data;
-            offset = 0;
-            p_manufacture_data =ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);//receive manufacture data
-            
-            p_tmp_Rxbuf =(BLE_Rx_Tx_Buffer_t *) p_manufacture_data;
-            
-
-            if (p_tmp_Rxbuf->preamble != 0x56)//if not 0x56,turn back
-              return;
-            
-            else if(p_tmp_Rxbuf -> hopcount == 1)//if hopcount=1,turn back
-              return;
-            
-            else if(p_tmp_Rxbuf -> dst_addr != recent_dst)//if destination different from recent_dst,turn back
-              return;
-
-          
+		name_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
+		parsed_name_len = ble_advdata_search(data->p_data,
+			data->len,
+			&offset,
+			BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME);
 
 
-            parsed_name_len = ble_advdata_search(data->p_data,
-                                                data->len,
-                                                &offset,
-                                                BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+		if (name_data != NULL)
+		{
 
-            if(p_manufacture_data != NULL)
-            {
-              
-              switch(p_tmp_Rxbuf -> source_addr)
-                { 
-                  case 0x01:
-                          assign_seq=0;
-                          break;
-                  case 0x02:
-                          assign_seq=1;
-                          break;
-                  case 0x03:
-                          assign_seq=2;
-                          break;
-                  case 0x04:
-                          assign_seq=3;
-                          break;
+			//NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME");
+			//NRF_LOG_HEXDUMP_DEBUG(name_data, parsed_name_len);
 
-                  default:
-                          break;
-                }
 
-             
-                if(p_tmp_Rxbuf -> seq_num > pre_seq_num [assign_seq] || p_tmp_Rxbuf -> seq_num == 0  )//seq_num 0~255 in function
-                {
 
-                NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
-                NRF_LOG_HEXDUMP_DEBUG(p_manufacture_data, parsed_name_len);//print specific data value
-                offset = 0;
+			data = &p_adv_report->data;
+			offset = 0;
+			p_manufacture_data = ble_advdata_parse(data->p_data, data->len, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);//receive manufacture data
 
-                pre_seq_num[assign_seq] = p_tmp_Rxbuf -> seq_num;//update new seq_num
+			p_tmp_Rxbuf = (BLE_Rx_Tx_Buffer_t *)p_manufacture_data;
 
-                p_tmp_Rxbuf -> hopcount--; //hopcount -1
+			/*
+			NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
+			   NRF_LOG_HEXDUMP_DEBUG(p_manufacture_data, parsed_name_len);//print specific data value
+			   offset = 0;
 
-                }
+			  // p_tmp_Rxbuf -> preamble = 0x56;
+			uint8_t *p_tmp_preamble = &p_tmp_Rxbuf->preamble;
+			NRF_LOG_DEBUG("BLE_GAP_AD_TYP");
+			   NRF_LOG_HEXDUMP_DEBUG(&p_tmp_Rxbuf->preamble,1);//print specific data value
+			   offset = 0;*/
 
-                else 
-                    return;
-            }
-        }
-        ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
-        ble_rscs_c_on_ble_evt(p_ble_evt, &m_rscs_c);
-        on_ble_central_evt(p_ble_evt);
-    }
+			if (p_tmp_Rxbuf->preamble == 0x56)//if not 0x56,turn back
+			{
+
+                          if (p_tmp_Rxbuf->hopcount == 1)//if hopcount=1,turn back
+					return;
+
+				else if (p_tmp_Rxbuf->dst_addr != recent_dst)//if destination different from recent_dst,turn back
+					return;
+
+
+
+
+				parsed_name_len = ble_advdata_search(data->p_data,
+					data->len,
+					&offset,
+					BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA);
+
+				if (p_manufacture_data != NULL)
+				{
+
+					switch (p_tmp_Rxbuf->source_addr)
+					{
+					case 0x01:
+						assign_seq = 0;
+						break;
+					case 0x02:
+						assign_seq = 1;
+						break;
+					case 0x03:
+						assign_seq = 2;
+						break;
+					case 0x04:
+						assign_seq = 3;
+						break;
+
+					default:
+						break;
+					}
+
+
+					if (p_tmp_Rxbuf->seq_num > pre_seq_num[assign_seq] || p_tmp_Rxbuf->seq_num == 0x00)//seq_num 0~255 in function
+					{
+
+						NRF_LOG_DEBUG("BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA");
+						NRF_LOG_HEXDUMP_DEBUG(p_manufacture_data, parsed_name_len);//print specific data value
+						offset = 0;
+
+						pre_seq_num[assign_seq] = p_tmp_Rxbuf->seq_num;//update new seq_num
+						NRF_LOG_DEBUG("SEQ");
+						NRF_LOG_HEXDUMP_DEBUG(&pre_seq_num[assign_seq], 1);//print specific data value
+
+						p_tmp_Rxbuf->hopcount--; //hopcount -1
+
+					}
+
+					else
+						return;
+				}
+			}
+			else if (p_tmp_Rxbuf-> preamble == 0x66)
+			{
+                             if(recent_dst == p_tmp_Rxbuf -> source_addr)
+                              {
+                                  recent_rssi = rssi_data;
+                                  NRF_LOG_DEBUG("RSSI VALUE");
+                                  NRF_LOG_INFO("rssi =%d dBm", rssi_data);//print RSSI value
+                                  NRF_LOG_DEBUG("ADDRESS");
+                                  NRF_LOG_INFO("addr =%x ",recent_dst );//print RSSI value 
+                              }
+                             else
+                             {  
+                                  if(rssi_data > recent_rssi)
+                                       recent_dst = p_tmp_Rxbuf -> source_addr;
+                                       NRF_LOG_DEBUG("ADDRESS");
+                                       NRF_LOG_INFO("addr =%x ",recent_dst );//print RSSI value 
+                                 
+                             }
+                              
+			}
+			else
+				return;
+		}
+		ble_hrs_c_on_ble_evt(p_ble_evt, &m_hrs_c);
+		ble_rscs_c_on_ble_evt(p_ble_evt, &m_rscs_c);
+		on_ble_central_evt(p_ble_evt);
+	}
 }
 
 
@@ -920,13 +967,13 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
  */
 static void hrs_c_init(void)
 {
-    ret_code_t       err_code;
-    ble_hrs_c_init_t hrs_c_init_obj;
+	ret_code_t       err_code;
+	ble_hrs_c_init_t hrs_c_init_obj;
 
-    hrs_c_init_obj.evt_handler = hrs_c_evt_handler;
+	hrs_c_init_obj.evt_handler = hrs_c_evt_handler;
 
-    err_code = ble_hrs_c_init(&m_hrs_c, &hrs_c_init_obj);
-    APP_ERROR_CHECK(err_code);
+	err_code = ble_hrs_c_init(&m_hrs_c, &hrs_c_init_obj);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -934,13 +981,13 @@ static void hrs_c_init(void)
  */
 static void rscs_c_init(void)
 {
-    ret_code_t        err_code;
-    ble_rscs_c_init_t rscs_c_init_obj;
+	ret_code_t        err_code;
+	ble_rscs_c_init_t rscs_c_init_obj;
 
-    rscs_c_init_obj.evt_handler = rscs_c_evt_handler;
+	rscs_c_init_obj.evt_handler = rscs_c_evt_handler;
 
-    err_code = ble_rscs_c_init(&m_rscs_c, &rscs_c_init_obj);
-    APP_ERROR_CHECK(err_code);
+	err_code = ble_rscs_c_init(&m_rscs_c, &rscs_c_init_obj);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -950,23 +997,23 @@ static void rscs_c_init(void)
  */
 static void ble_stack_init(void)
 {
-    ret_code_t err_code;
+	ret_code_t err_code;
 
-    err_code = nrf_sdh_enable_request();
-    APP_ERROR_CHECK(err_code);
+	err_code = nrf_sdh_enable_request();
+	APP_ERROR_CHECK(err_code);
 
-    // Configure the BLE stack using the default settings.
-    // Fetch the start address of the application RAM.
-    uint32_t ram_start = 0;
-    err_code = nrf_sdh_ble_default_cfg_set(APP_BLE_CONN_CFG_TAG, &ram_start);
-    APP_ERROR_CHECK(err_code);
+	// Configure the BLE stack using the default settings.
+	// Fetch the start address of the application RAM.
+	uint32_t ram_start = 0;
+	err_code = nrf_sdh_ble_default_cfg_set(APP_BLE_CONN_CFG_TAG, &ram_start);
+	APP_ERROR_CHECK(err_code);
 
-    // Enable BLE stack.
-    err_code = nrf_sdh_ble_enable(&ram_start);
-    APP_ERROR_CHECK(err_code);
+	// Enable BLE stack.
+	err_code = nrf_sdh_ble_enable(&ram_start);
+	APP_ERROR_CHECK(err_code);
 
-    // Register a handler for BLE events.
-    NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
+	// Register a handler for BLE events.
+	NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
 }
 
 
@@ -974,33 +1021,33 @@ static void ble_stack_init(void)
  */
 static void peer_manager_init(void)
 {
-    ble_gap_sec_params_t sec_param;
-    ret_code_t err_code;
+	ble_gap_sec_params_t sec_param;
+	ret_code_t err_code;
 
-    err_code = pm_init();
-    APP_ERROR_CHECK(err_code);
+	err_code = pm_init();
+	APP_ERROR_CHECK(err_code);
 
-    memset(&sec_param, 0, sizeof(ble_gap_sec_params_t));
+	memset(&sec_param, 0, sizeof(ble_gap_sec_params_t));
 
-    // Security parameters to be used for all security procedures.
-    sec_param.bond           = SEC_PARAM_BOND;
-    sec_param.mitm           = SEC_PARAM_MITM;
-    sec_param.lesc           = SEC_PARAM_LESC;
-    sec_param.keypress       = SEC_PARAM_KEYPRESS;
-    sec_param.io_caps        = SEC_PARAM_IO_CAPABILITIES;
-    sec_param.oob            = SEC_PARAM_OOB;
-    sec_param.min_key_size   = SEC_PARAM_MIN_KEY_SIZE;
-    sec_param.max_key_size   = SEC_PARAM_MAX_KEY_SIZE;
-    sec_param.kdist_own.enc  = 1;
-    sec_param.kdist_own.id   = 1;
-    sec_param.kdist_peer.enc = 1;
-    sec_param.kdist_peer.id  = 1;
+	// Security parameters to be used for all security procedures.
+	sec_param.bond = SEC_PARAM_BOND;
+	sec_param.mitm = SEC_PARAM_MITM;
+	sec_param.lesc = SEC_PARAM_LESC;
+	sec_param.keypress = SEC_PARAM_KEYPRESS;
+	sec_param.io_caps = SEC_PARAM_IO_CAPABILITIES;
+	sec_param.oob = SEC_PARAM_OOB;
+	sec_param.min_key_size = SEC_PARAM_MIN_KEY_SIZE;
+	sec_param.max_key_size = SEC_PARAM_MAX_KEY_SIZE;
+	sec_param.kdist_own.enc = 1;
+	sec_param.kdist_own.id = 1;
+	sec_param.kdist_peer.enc = 1;
+	sec_param.kdist_peer.id = 1;
 
-    err_code = pm_sec_params_set(&sec_param);
-    APP_ERROR_CHECK(err_code);
+	err_code = pm_sec_params_set(&sec_param);
+	APP_ERROR_CHECK(err_code);
 
-    err_code = pm_register(pm_evt_handler);
-    APP_ERROR_CHECK(err_code);
+	err_code = pm_register(pm_evt_handler);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1008,12 +1055,12 @@ static void peer_manager_init(void)
  */
 static void delete_bonds(void)
 {
-    ret_code_t err_code;
+	ret_code_t err_code;
 
-    NRF_LOG_INFO("Erase bonds!");
+	NRF_LOG_INFO("Erase bonds!");
 
-    err_code = pm_peers_delete();
-    APP_ERROR_CHECK(err_code);
+	err_code = pm_peers_delete();
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1024,16 +1071,16 @@ static void delete_bonds(void)
  */
 static void buttons_leds_init(bool * p_erase_bonds)
 {
-    ret_code_t err_code;
-    bsp_event_t startup_event;
+	ret_code_t err_code;
+	bsp_event_t startup_event;
 
-    err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, NULL);
-    APP_ERROR_CHECK(err_code);
+	err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, NULL);
+	APP_ERROR_CHECK(err_code);
 
-    err_code = bsp_btn_ble_init(NULL, &startup_event);
-    APP_ERROR_CHECK(err_code);
+	err_code = bsp_btn_ble_init(NULL, &startup_event);
+	APP_ERROR_CHECK(err_code);
 
-    *p_erase_bonds = (startup_event == BSP_EVENT_CLEAR_BONDING_DATA);
+	*p_erase_bonds = (startup_event == BSP_EVENT_CLEAR_BONDING_DATA);
 }
 
 
@@ -1044,26 +1091,26 @@ static void buttons_leds_init(bool * p_erase_bonds)
  */
 static void gap_params_init(void)
 {
-    ret_code_t              err_code;
-    ble_gap_conn_params_t   gap_conn_params;
-    ble_gap_conn_sec_mode_t sec_mode;
+	ret_code_t              err_code;
+	ble_gap_conn_params_t   gap_conn_params;
+	ble_gap_conn_sec_mode_t sec_mode;
 
-    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
+	BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
 
-    err_code = sd_ble_gap_device_name_set(&sec_mode,
-                                          (const uint8_t *)DEVICE_NAME,
-                                          strlen(DEVICE_NAME));
-    APP_ERROR_CHECK(err_code);
+	err_code = sd_ble_gap_device_name_set(&sec_mode,
+		(const uint8_t *)DEVICE_NAME,
+		strlen(DEVICE_NAME));
+	APP_ERROR_CHECK(err_code);
 
-    memset(&gap_conn_params, 0, sizeof(gap_conn_params));
+	memset(&gap_conn_params, 0, sizeof(gap_conn_params));
 
-    gap_conn_params.min_conn_interval = m_scan.conn_params.min_conn_interval;
-    gap_conn_params.max_conn_interval = m_scan.conn_params.max_conn_interval;
-    gap_conn_params.slave_latency     = m_scan.conn_params.slave_latency;
-    gap_conn_params.conn_sup_timeout  = m_scan.conn_params.conn_sup_timeout;
+	gap_conn_params.min_conn_interval = m_scan.conn_params.min_conn_interval;
+	gap_conn_params.max_conn_interval = m_scan.conn_params.max_conn_interval;
+	gap_conn_params.slave_latency = m_scan.conn_params.slave_latency;
+	gap_conn_params.conn_sup_timeout = m_scan.conn_params.conn_sup_timeout;
 
-    err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
-    APP_ERROR_CHECK(err_code);
+	err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1071,8 +1118,8 @@ static void gap_params_init(void)
  */
 static void gatt_init(void)
 {
-    ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, NULL);
-    APP_ERROR_CHECK(err_code);
+	ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, NULL);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1080,22 +1127,22 @@ static void gatt_init(void)
  */
 static void conn_params_init(void)
 {
-    ret_code_t             err_code;
-    ble_conn_params_init_t cp_init;
+	ret_code_t             err_code;
+	ble_conn_params_init_t cp_init;
 
-    memset(&cp_init, 0, sizeof(cp_init));
+	memset(&cp_init, 0, sizeof(cp_init));
 
-    cp_init.p_conn_params                  = NULL;
-    cp_init.first_conn_params_update_delay = FIRST_CONN_PARAMS_UPDATE_DELAY;
-    cp_init.next_conn_params_update_delay  = NEXT_CONN_PARAMS_UPDATE_DELAY;
-    cp_init.max_conn_params_update_count   = MAX_CONN_PARAMS_UPDATE_COUNT;
-    cp_init.start_on_notify_cccd_handle    = BLE_CONN_HANDLE_INVALID; // Start upon connection.
-    cp_init.disconnect_on_fail             = true;
-    cp_init.evt_handler                    = NULL;  // Ignore events.
-    cp_init.error_handler                  = conn_params_error_handler;
+	cp_init.p_conn_params = NULL;
+	cp_init.first_conn_params_update_delay = FIRST_CONN_PARAMS_UPDATE_DELAY;
+	cp_init.next_conn_params_update_delay = NEXT_CONN_PARAMS_UPDATE_DELAY;
+	cp_init.max_conn_params_update_count = MAX_CONN_PARAMS_UPDATE_COUNT;
+	cp_init.start_on_notify_cccd_handle = BLE_CONN_HANDLE_INVALID; // Start upon connection.
+	cp_init.disconnect_on_fail = true;
+	cp_init.evt_handler = NULL;  // Ignore events.
+	cp_init.error_handler = conn_params_error_handler;
 
-    err_code = ble_conn_params_init(&cp_init);
-    APP_ERROR_CHECK(err_code);
+	err_code = ble_conn_params_init(&cp_init);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1109,8 +1156,8 @@ static void conn_params_init(void)
  */
 static void db_disc_handler(ble_db_discovery_evt_t * p_evt)
 {
-    ble_hrs_on_db_disc_evt(&m_hrs_c, p_evt);
-    ble_rscs_on_db_disc_evt(&m_rscs_c, p_evt);
+	ble_hrs_on_db_disc_evt(&m_hrs_c, p_evt);
+	ble_rscs_on_db_disc_evt(&m_rscs_c, p_evt);
 }
 
 
@@ -1119,8 +1166,8 @@ static void db_disc_handler(ble_db_discovery_evt_t * p_evt)
  */
 static void db_discovery_init(void)
 {
-    ret_code_t err_code = ble_db_discovery_init(db_disc_handler);
-    APP_ERROR_CHECK(err_code);
+	ret_code_t err_code = ble_db_discovery_init(db_disc_handler);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1133,7 +1180,7 @@ static void db_discovery_init(void)
  */
 static void nrf_qwr_error_handler(uint32_t nrf_error)
 {
-    APP_ERROR_HANDLER(nrf_error);
+	APP_ERROR_HANDLER(nrf_error);
 }
 
 
@@ -1143,50 +1190,50 @@ static void nrf_qwr_error_handler(uint32_t nrf_error)
  */
 static void services_init(void)
 {
-    ret_code_t         err_code;
-    ble_hrs_init_t     hrs_init;
-    ble_rscs_init_t    rscs_init;
-    nrf_ble_qwr_init_t qwr_init = {0};
-    uint8_t            body_sensor_location;
+	ret_code_t         err_code;
+	ble_hrs_init_t     hrs_init;
+	ble_rscs_init_t    rscs_init;
+	nrf_ble_qwr_init_t qwr_init = { 0 };
+	uint8_t            body_sensor_location;
 
-    // Initialize Queued Write module instances.
-    qwr_init.error_handler = nrf_qwr_error_handler;
+	// Initialize Queued Write module instances.
+	qwr_init.error_handler = nrf_qwr_error_handler;
 
-    for (uint32_t i = 0; i < NRF_SDH_BLE_TOTAL_LINK_COUNT; i++)
-    {
-        err_code = nrf_ble_qwr_init(&m_qwr[i], &qwr_init);
-        APP_ERROR_CHECK(err_code);
-    }
+	for (uint32_t i = 0; i < NRF_SDH_BLE_TOTAL_LINK_COUNT; i++)
+	{
+		err_code = nrf_ble_qwr_init(&m_qwr[i], &qwr_init);
+		APP_ERROR_CHECK(err_code);
+	}
 
-    // Initialize the Heart Rate Service.
-    body_sensor_location = BLE_HRS_BODY_SENSOR_LOCATION_FINGER;
+	// Initialize the Heart Rate Service.
+	body_sensor_location = BLE_HRS_BODY_SENSOR_LOCATION_FINGER;
 
-    memset(&hrs_init, 0, sizeof(hrs_init));
+	memset(&hrs_init, 0, sizeof(hrs_init));
 
-    hrs_init.evt_handler                 = NULL;
-    hrs_init.is_sensor_contact_supported = true;
-    hrs_init.p_body_sensor_location      = &body_sensor_location;
+	hrs_init.evt_handler = NULL;
+	hrs_init.is_sensor_contact_supported = true;
+	hrs_init.p_body_sensor_location = &body_sensor_location;
 
-    // Here the sec level for the Heart Rate Service can be changed or increased.
-    hrs_init.hrm_cccd_wr_sec = SEC_OPEN;
-    hrs_init.bsl_rd_sec      = SEC_OPEN;
+	// Here the sec level for the Heart Rate Service can be changed or increased.
+	hrs_init.hrm_cccd_wr_sec = SEC_OPEN;
+	hrs_init.bsl_rd_sec = SEC_OPEN;
 
-    err_code = ble_hrs_init(&m_hrs, &hrs_init);
-    APP_ERROR_CHECK(err_code);
+	err_code = ble_hrs_init(&m_hrs, &hrs_init);
+	APP_ERROR_CHECK(err_code);
 
-    // Initialize the Running Speed and Cadence Service.
-    memset(&rscs_init, 0, sizeof(rscs_init));
+	// Initialize the Running Speed and Cadence Service.
+	memset(&rscs_init, 0, sizeof(rscs_init));
 
-    rscs_init.evt_handler = NULL;
-    rscs_init.feature     = BLE_RSCS_FEATURE_INSTANT_STRIDE_LEN_BIT |
-                            BLE_RSCS_FEATURE_WALKING_OR_RUNNING_STATUS_BIT;
+	rscs_init.evt_handler = NULL;
+	rscs_init.feature = BLE_RSCS_FEATURE_INSTANT_STRIDE_LEN_BIT |
+		BLE_RSCS_FEATURE_WALKING_OR_RUNNING_STATUS_BIT;
 
-    // Here the sec level for the Running Speed and Cadence Service can be changed or increased.
-    rscs_init.rsc_feature_rd_sec   = SEC_OPEN;
-    rscs_init.rsc_meas_cccd_wr_sec = SEC_OPEN;
+	// Here the sec level for the Running Speed and Cadence Service can be changed or increased.
+	rscs_init.rsc_feature_rd_sec = SEC_OPEN;
+	rscs_init.rsc_meas_cccd_wr_sec = SEC_OPEN;
 
-    err_code = ble_rscs_init(&m_rscs, &rscs_init);
-    APP_ERROR_CHECK(err_code);
+	err_code = ble_rscs_init(&m_rscs, &rscs_init);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1194,34 +1241,34 @@ static void services_init(void)
  */
 static void advertising_init(void)
 {
-    ret_code_t             err_code;
-    ble_advertising_init_t init;
-    ble_advdata_manuf_data_t                  adv_manuf_data;
-    uint8_t                                   adv_manuf_data_data[] =   {4,4,4,4,4,4,4};
+	ret_code_t             err_code;
+	ble_advertising_init_t init;
+	ble_advdata_manuf_data_t                  adv_manuf_data;
+	uint8_t                                   adv_manuf_data_data[] = { 0x56,0x01,0x78,0x44,0x03 };
 
-    memset(&init, 0, sizeof(init));
+	memset(&init, 0, sizeof(init));
 
-    init.advdata.name_type               = BLE_ADVDATA_FULL_NAME;
-    init.advdata.include_appearance      = true;
-    init.advdata.flags                   = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-    //init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
-    //init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
+	init.advdata.name_type = BLE_ADVDATA_FULL_NAME;
+	init.advdata.include_appearance = true;
+	init.advdata.flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
+	//init.advdata.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
+	//init.advdata.uuids_complete.p_uuids  = m_adv_uuids;
 
-    init.config.ble_adv_fast_enabled  = true;
-    init.config.ble_adv_fast_interval = APP_ADV_INTERVAL;
-    init.config.ble_adv_fast_timeout  = APP_ADV_DURATION;
+	init.config.ble_adv_fast_enabled = true;
+	init.config.ble_adv_fast_interval = APP_ADV_INTERVAL;
+	init.config.ble_adv_fast_timeout = APP_ADV_DURATION;
 
-    init.evt_handler = on_adv_evt;
-    
-    adv_manuf_data.data.p_data        = adv_manuf_data_data;
-    adv_manuf_data.data.size          = strlen(adv_manuf_data_data);
-    adv_manuf_data.company_identifier = 0x0059; //Nordic's company ID
-    init.advdata.p_manuf_specific_data = &adv_manuf_data; 
+	init.evt_handler = on_adv_evt;
 
-    err_code = ble_advertising_init(&m_advertising, &init);
-    APP_ERROR_CHECK(err_code);
+	adv_manuf_data.data.p_data = adv_manuf_data_data;
+	adv_manuf_data.data.size = strlen(adv_manuf_data_data);
+	adv_manuf_data.company_identifier = 0x0059; //Nordic's company ID
+	init.advdata.p_manuf_specific_data = &adv_manuf_data;
 
-    ble_advertising_conn_cfg_tag_set(&m_advertising, APP_BLE_CONN_CFG_TAG);
+	err_code = ble_advertising_init(&m_advertising, &init);
+	APP_ERROR_CHECK(err_code);
+
+	ble_advertising_conn_cfg_tag_set(&m_advertising, APP_BLE_CONN_CFG_TAG);
 }
 
 
@@ -1229,10 +1276,10 @@ static void advertising_init(void)
  */
 static void log_init(void)
 {
-    ret_code_t err_code = NRF_LOG_INIT(NULL);
-    APP_ERROR_CHECK(err_code);
+	ret_code_t err_code = NRF_LOG_INIT(NULL);
+	APP_ERROR_CHECK(err_code);
 
-    NRF_LOG_DEFAULT_BACKENDS_INIT();
+	NRF_LOG_DEFAULT_BACKENDS_INIT();
 }
 
 
@@ -1240,21 +1287,21 @@ static void log_init(void)
  */
 static void power_management_init(void)
 {
-    ret_code_t err_code;
-    err_code = nrf_pwr_mgmt_init();
-    APP_ERROR_CHECK(err_code);
+	ret_code_t err_code;
+	err_code = nrf_pwr_mgmt_init();
+	APP_ERROR_CHECK(err_code);
 }
 
 
 /**@brief Function for handling the idle state (main loop). If there is no pending log operation,
-          then sleeps until the next event occurs.
+		  then sleeps until the next event occurs.
  */
 static void idle_state_handle(void)
 {
-    if (NRF_LOG_PROCESS() == false)
-    {
-        nrf_pwr_mgmt_run();
-    }
+	if (NRF_LOG_PROCESS() == false)
+	{
+		nrf_pwr_mgmt_run();
+	}
 }
 
 
@@ -1262,8 +1309,8 @@ static void idle_state_handle(void)
  */
 static void timer_init(void)
 {
-    ret_code_t err_code = app_timer_init();
-    APP_ERROR_CHECK(err_code);
+	ret_code_t err_code = app_timer_init();
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -1271,53 +1318,53 @@ static void timer_init(void)
  */
 int main(void)
 {
-    bool erase_bonds;
+	bool erase_bonds;
 
-    // Initialize.
-    log_init();
-    timer_init();
-    buttons_leds_init(&erase_bonds);
-    power_management_init();
-    ble_stack_init();
-    scan_init();
-    gap_params_init();
-    gatt_init();
-    conn_params_init();
-    db_discovery_init();
-    peer_manager_init();
-    hrs_c_init();
-    rscs_c_init();
-    services_init();
-    advertising_init();
-    
-    BLE_Rx_Tx_Buffer_t test1;
-   
+	// Initialize.
+	log_init();
+	timer_init();
+	buttons_leds_init(&erase_bonds);
+	power_management_init();
+	ble_stack_init();
+	scan_init();
+	gap_params_init();
+	gatt_init();
+	conn_params_init();
+	db_discovery_init();
+	peer_manager_init();
+	hrs_c_init();
+	rscs_c_init();
+	services_init();
+	advertising_init();
 
-    memset(&test1,0,sizeof(test1));
-    
-    test1.preamble=0x00;
-    test1.dst_addr=0x68; 
-    test1.source_addr=0x45;
-    test1.seq_num=0x04;
-    test1.hopcount=0x02; 
-    
-    
-     // Start execution.
-    NRF_LOG_INFO("Relay example started.");
+	/* BLE_Rx_Tx_Buffer_t test1;
 
-    if (erase_bonds == true)
-    {
-        // Scanning and advertising is done upon PM_EVT_PEERS_DELETE_SUCCEEDED event.
-        delete_bonds();
-    }
-    else
-    {
-        adv_scan_start();
-    }
 
-    // Enter main loop.
-    for (;;)
-    {
-        idle_state_handle();
-    }
+	 memset(&test1,0,sizeof(test1));
+
+	 test1.preamble=0x00;
+	 test1.dst_addr=0x68;
+	 test1.source_addr=0x45;
+	 test1.seq_num=0x04;
+	 test1.hopcount=0x02; */
+
+
+	 // Start execution.
+	NRF_LOG_INFO("Relay example started.");
+
+	if (erase_bonds == true)
+	{
+		// Scanning and advertising is done upon PM_EVT_PEERS_DELETE_SUCCEEDED event.
+		delete_bonds();
+	}
+	else
+	{
+		adv_scan_start();
+	}
+
+	// Enter main loop.
+	for (;;)
+	{
+		idle_state_handle();
+	}
 }
